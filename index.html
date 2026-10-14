@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:; connect-src 'self' ws: wss:; object-src 'none'; base-uri 'none'; form-action 'none'"
+    />
+    <meta name="description" content="Down Under Again: a retro pixel-art ecosystem survival game along Florida's river-to-reef transect." />
+    <title>Down Under Again</title>
+    <link rel="icon" href="data:," />
+  </head>
+  <body>
+    <div id="app" class="relative w-full h-full flex items-center justify-center bg-ink">
+      <canvas id="view" class="pixelated block" width="384" height="216" aria-label="Game view"></canvas>
+      <div id="ui" class="absolute inset-0"></div>
+      <noscript>Down Under Again needs JavaScript to run.</noscript>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
