@@ -132,6 +132,8 @@ describe('world simulation', () => {
       p.y = 700;
       p.vx = 0;
       p.vy = 0;
+      // Keep anything edible from drifting into its mouth.
+      for (const o of w.near(p.x, p.y, 120, [])) if (o !== p) w.kill(o, 'eaten', null, true);
       w.step();
     }
     expect(p.alive).toBe(false);
