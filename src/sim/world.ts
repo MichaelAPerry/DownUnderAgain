@@ -189,7 +189,11 @@ export class World {
     for (const e of this.entities) if (e.alive) this.hash.insert(e);
   }
 
-  /** Alive entities within radius of a point (excluding none). */
+  /**
+   * Entities within `radius` of a point, written into `out` (which is cleared
+   * first). Each call site must own its buffer: never pass a buffer that an
+   * enclosing loop is still iterating.
+   */
   near(x: number, y: number, radius: number, out: Entity[]): Entity[] {
     out.length = 0;
     return this.hash.query(x, y, radius, out);

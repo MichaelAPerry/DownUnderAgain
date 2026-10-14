@@ -40,12 +40,6 @@ export class Spawner {
     return base;
   }
 
-  lionfishCount(): number {
-    let n = 0;
-    for (const e of this.world.entities) if (e.alive && !e.def.native && !e.isPlayer) n++;
-    return n;
-  }
-
   fillInitial(): void {
     this.recount();
     for (const def of this.world.region.all) {

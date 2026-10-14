@@ -7,6 +7,7 @@ import type { SpeciesDef, UpgradeDef } from '../data/schema';
 import type { Region } from '../data/regions/florida';
 import type { ModeId } from '../app/save';
 import { UPGRADES } from '../data/upgrades';
+import { PALETTE } from '../data/palette';
 import { Rng } from '../engine/rng';
 import { World } from '../sim/world';
 import type { DeathCause, Entity } from '../sim/types';
@@ -92,7 +93,8 @@ export interface RunSummary {
 
 /** Build the species ladder for staged modes. */
 export function buildLadder(mode: ModeId, playable: readonly SpeciesDef[], seed: number): SpeciesDef[] {
-  const bySize = playable.slice().sort((a, b) => a.length * a.height - b.length * b.height || a.id.localeCompare(b.id));
+  // Body length orders the food chain intuitively: mosquitofish first, hammerhead last.
+  const bySize = playable.slice().sort((a, b) => a.length - b.length || a.height - b.height || a.id.localeCompare(b.id));
   if (mode === 'tournament') return bySize;
   if (mode === 'challenge') {
     const rng = new Rng(seed ^ 0x5eed);
@@ -202,7 +204,7 @@ export class GameSession {
     this.unsub.push(ev.on('eat', (e) => this.onEat(e.eater, e.prey, e.gain, e.points)));
     this.unsub.push(ev.on('sting', (e) => {
       if (e.attacker === this.player) {
-        this.toast(`Ouch! ${e.prey.def.name} spines -${e.damage}`, '#ef7d57');
+        this.toast(`Ouch! ${e.prey.def.name} spines -${e.damage}`, PALETTE.orange);
         this.feedback.push({ kind: 'sting', x: this.player.x, y: this.player.y });
       }
     }));
@@ -211,7 +213,7 @@ export class GameSession {
     }));
     this.unsub.push(ev.on('clean', (e) => {
       if (e.client === this.player) {
-        this.toast('Cleaned! Parasites removed', '#73eff7');
+        this.toast('Cleaned! Parasites removed', PALETTE.cyan);
         this.feedback.push({ kind: 'clean', x: this.player.x, y: this.player.y });
       } else if (e.cleaner === this.player) {
         this.addScore(Math.round(5 + e.gain / 4));
@@ -239,7 +241,7 @@ export class GameSession {
     this.feedback.push({ kind, x: prey.x, y: prey.y, text: `+${points}` });
     if (!prey.def.native) {
       this.invasivesEaten++;
-      this.toast(`Invasive ${prey.def.name} removed! x2`, '#a7f070');
+      this.toast(`Invasive ${prey.def.name} removed! x2`, PALETTE.lime);
     }
   }
 
@@ -263,7 +265,7 @@ export class GameSession {
         // Only one codex toast at a time; the newest replaces the last.
         const i = this.toasts.findIndex((t) => t.text.startsWith(CODEX_TOAST));
         if (i >= 0) this.toasts.splice(i, 1);
-        this.toast(`${CODEX_TOAST}${def.name}`, '#ffcd75');
+        this.toast(`${CODEX_TOAST}${def.name}`, PALETTE.yellow);
         this.feedback.push({ kind: 'discover', x: this.player.x, y: this.player.y });
       }
     }

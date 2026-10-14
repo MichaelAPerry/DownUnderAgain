@@ -27,7 +27,7 @@ Spring Run → Mangrove Estuary → Seagrass Flats → Florida Keys Reef → Gul
 - **Four modes:**
   - **Free Swim**: any fish, survive as long as you can
   - **Evolution**: eat to earn Biomass, then press Tab to mutate mid-run (Power Fins, Big Jaw, Camouflage, Spike Spines…)
-  - **Tournament**: climb the whole food chain from smallest to largest, with 3 lives
+  - **Tournament**: climb the whole food chain from the mosquitofish to the great hammerhead, with 3 lives
   - **Challenge**: four random fish of growing size, one life
 - **Custom Fish Sandbox.** Spend 20 points on size, speed, senses, jaw, camouflage, spines, armor and efficiency, then pick diet, home zone, shape, pattern and colours. The pixel art is generated from your design
 - **Reef Codex**: a field guide that fills in as you meet each creature, with its diet, predators, status and a fact
@@ -54,7 +54,8 @@ Requires Node 22+.
 ```bash
 npm install
 npm run dev        # dev server at http://localhost:5173
-npm run check      # strict typecheck + test suite
+npm run check      # strict typecheck + unit tests
+npm run e2e        # Playwright browser smoke tests (needs Chromium: npx playwright install chromium)
 npm run build      # typecheck + production build into dist/
 npm run preview    # serve the production build locally
 ```
@@ -65,8 +66,8 @@ state machine, simulation design and food-web rules.
 
 ## Publishing
 
-The workflow in `.github/workflows/pages.yml` typechecks, tests and builds every
-pull request. On every push to `main` it deploys to GitHub Pages.
+The workflow in `.github/workflows/pages.yml` typechecks, unit-tests, browser-tests
+and builds every pull request. On every push to `main` it deploys to GitHub Pages.
 
 One-time setup: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
 After that, each merge to `main` publishes the game. You can also run the

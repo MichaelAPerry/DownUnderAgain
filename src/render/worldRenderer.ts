@@ -5,7 +5,6 @@
  * the simulation is read, never written.
  */
 import { PALETTE, mixHex } from '../data/palette';
-import type { ZoneId } from '../data/schema';
 import { Camera, VIEW_H, VIEW_W } from '../engine/camera';
 import { clamp } from '../engine/math';
 import { yToMeters } from '../world/depth';
@@ -106,7 +105,7 @@ export class WorldRenderer {
   draw(ctx: CanvasRenderingContext2D, cam: Camera, alpha: number, time: number, frameDt: number, opts: DrawOptions): void {
     const cx = Math.round(cam.x);
     const cy = Math.round(cam.y);
-    this.drawBackdrop(ctx, cx, cy, time);
+    this.drawBackdrop(ctx, cx, cy, time, frameDt);
     this.drawDecor(ctx, cx, cy, time, false);
     this.drawEntities(ctx, cx, cy, alpha, time, opts);
     this.drawDecor(ctx, cx, cy, time, true);
@@ -118,7 +117,7 @@ export class WorldRenderer {
     if (opts.cues) this.drawCues(ctx, cx, cy, alpha, time);
   }
 
-  private drawBackdrop(ctx: CanvasRenderingContext2D, cx: number, cy: number, time: number): void {
+  private drawBackdrop(ctx: CanvasRenderingContext2D, cx: number, cy: number, time: number, frameDt: number): void {
     const t = this.world.terrain;
     const surf = -cy; // screen y of the water surface
     if (surf > 0) {
@@ -176,7 +175,7 @@ export class WorldRenderer {
       }
     }
     // Spring vents bubble.
-    this.ventTimer -= 1 / 60;
+    this.ventTimer -= frameDt;
     if (this.ventTimer <= 0) {
       this.ventTimer = 0.25;
       for (const d of this.decor) {
@@ -401,9 +400,6 @@ export class WorldRenderer {
     return c;
   }
 
-  zoneColor(id: ZoneId): string {
-    return P[this.world.terrain.zoneDef(id).water];
-  }
 }
 
 // ---- props ---------------------------------------------------------------

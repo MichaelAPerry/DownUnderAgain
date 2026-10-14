@@ -13,7 +13,6 @@ import { Camera, VIEW_H, VIEW_W } from '../engine/camera';
 import { Input } from '../engine/input';
 import { GameLoop } from '../engine/loop';
 import { GameSession, MODES } from '../modes/session';
-import type { FeedbackEvent } from '../modes/session';
 import { drawHud } from '../render/hud';
 import { WorldRenderer } from '../render/worldRenderer';
 import { SIM_DT, World } from '../sim/world';
@@ -23,6 +22,8 @@ import type { ModeId, SaveData } from './save';
 import { OVERLAY_SCREENS, ScreenMachine } from './screens';
 import type { Screen } from './screens';
 import { SCREENS } from '../ui/screens';
+import { presentFeedback } from './feedback';
+import { fitCanvas } from './layout';
 
 /** Seconds the death / stage-clear banner shows before the next screen. */
 const OUTCOME_DELAY = 1.6;
@@ -51,6 +52,8 @@ export class Game implements AppApi {
   private time = 0;
   private outcomeTimer = 0;
   private lastSpecies: SpeciesDef | null = null;
+  /** How many of the session's discoveries are already saved. */
+  private savedDiscoveries = 0;
 
   constructor(private readonly canvas: HTMLCanvasElement, private readonly ui: HTMLElement) {
     const ctx = canvas.getContext('2d', { alpha: false });
@@ -69,8 +72,8 @@ export class Game implements AppApi {
     const unlock = () => this.audio.unlock();
     window.addEventListener('pointerdown', unlock);
     window.addEventListener('keydown', unlock);
-    window.addEventListener('resize', () => this.fit());
-    this.fit();
+    window.addEventListener('resize', () => fitCanvas(canvas));
+    fitCanvas(canvas);
     this.mount();
     this.loop = new GameLoop({ update: (dt) => this.update(dt), render: (a, f) => this.render(a, f) }, SIM_DT);
     this.loop.start();
@@ -188,6 +191,7 @@ export class Game implements AppApi {
     };
     const s = new GameSession(opts);
     this.session = s;
+    this.savedDiscoveries = 0;
     this.lastSpecies = species;
     this.showWorld(s.world);
     this.camera.snap(s.player.x, s.player.y);
@@ -204,6 +208,7 @@ export class Game implements AppApi {
   private recordProgress(s: GameSession): void {
     const codex = new Set(this.save.codex);
     for (const id of s.discoveries) codex.add(id);
+    this.savedDiscoveries = s.discoveries.length;
     this.save.codex = [...codex];
     const best = this.save.best[s.mode.id] ?? 0;
     if (s.score > best) this.save.best[s.mode.id] = s.score;
@@ -238,6 +243,8 @@ export class Game implements AppApi {
         if (inp.wasPressed('KeyC')) this.setCues(!this.save.cues);
         this.writePlayerInput(s);
         s.update(dt);
+        // Save new codex entries right away so closing the tab can't lose them.
+        if (s.discoveries.length > this.savedDiscoveries) this.recordProgress(s);
         if (s.outcome !== 'playing') this.handleOutcome(s, dt);
       }
     } else if ((scr === 'paused' && (inp.wasPressed('Escape') || inp.wasPressed('KeyP'))) ||
@@ -309,57 +316,12 @@ export class Game implements AppApi {
     });
     if (live && s && scr !== 'briefing') {
       drawHud(ctx, s, this.camera, this.time);
-      this.consumeFeedback(s.feedback);
+      presentFeedback(s.feedback, this.renderer, (n) => this.sfx(n));
     }
     if (!live || scr === 'briefing') {
       ctx.fillStyle = 'rgba(20,20,32,0.25)';
       ctx.fillRect(0, 0, VIEW_W, VIEW_H);
     }
-  }
-
-  private consumeFeedback(list: FeedbackEvent[]): void {
-    const P = { lime: '#a7f070', white: '#f4f4f4', yellow: '#ffcd75', red: '#b13e53', cyan: '#73eff7', orange: '#ef7d57' };
-    for (const f of list) {
-      switch (f.kind) {
-        case 'eat':
-        case 'bigEat':
-        case 'invasive':
-          this.renderer.puff(f.x, f.y, P.white);
-          if (f.text) this.renderer.floatText(f.x, f.y - 6, f.text, f.kind === 'invasive' ? P.lime : P.yellow);
-          this.sfx(f.kind === 'eat' ? 'eat' : 'bigEat');
-          break;
-        case 'graze':
-          this.renderer.puff(f.x, f.y, P.lime);
-          if (f.text) this.renderer.floatText(f.x, f.y - 6, f.text, P.lime);
-          this.sfx('graze');
-          break;
-        case 'sting':
-          this.renderer.puff(f.x, f.y, P.orange);
-          this.sfx('sting');
-          break;
-        case 'hurt':
-          if (f.text) this.renderer.floatText(f.x, f.y - 6, f.text, P.white);
-          this.sfx('hurt');
-          break;
-        case 'clean':
-          this.renderer.bubbles(f.x, f.y, 4);
-          if (f.text) this.renderer.floatText(f.x, f.y - 6, f.text, P.cyan);
-          this.sfx('clean');
-          break;
-        case 'death':
-          this.renderer.puff(f.x, f.y, P.red);
-          this.renderer.bubbles(f.x, f.y, 8);
-          this.sfx('death');
-          break;
-        case 'discover':
-          this.sfx('select');
-          break;
-        case 'stage':
-          this.sfx('win');
-          break;
-      }
-    }
-    list.length = 0;
   }
 
   // ---- layout ------------------------------------------------------------
@@ -370,15 +332,5 @@ export class Game implements AppApi {
     const first = this.ui.querySelector<HTMLElement>('button.btn-primary, button, input');
     if (first && this.machine.current !== 'playing') first.focus({ preventScroll: true });
     else this.canvas.focus?.();
-  }
-
-  /** Scale the canvas by the largest whole number that fits the window. */
-  private fit(): void {
-    const sx = window.innerWidth / VIEW_W;
-    const sy = window.innerHeight / VIEW_H;
-    const raw = Math.min(sx, sy);
-    const scale = raw >= 1 ? Math.floor(raw) : raw;
-    this.canvas.style.width = `${Math.round(VIEW_W * scale)}px`;
-    this.canvas.style.height = `${Math.round(VIEW_H * scale)}px`;
   }
 }

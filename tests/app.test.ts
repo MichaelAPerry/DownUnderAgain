@@ -25,11 +25,9 @@ describe('species ladders', () => {
   it('tournament covers every playable fish, smallest first', () => {
     const l = buildLadder('tournament', playable, 1);
     expect(l.length).toBe(playable.length);
-    for (let i = 1; i < l.length; i++) {
-      const a = l[i - 1]!;
-      const b = l[i]!;
-      expect(a.length * a.height).toBeLessThanOrEqual(b.length * b.height);
-    }
+    for (let i = 1; i < l.length; i++) expect(l[i - 1]!.length).toBeLessThanOrEqual(l[i]!.length);
+    expect(l[0]?.id).toBe('mosquitofish');
+    expect(l[l.length - 1]?.id).toBe('great_hammerhead');
   });
 
   it('challenge picks four growing fish, reproducibly', () => {
@@ -37,7 +35,7 @@ describe('species ladders', () => {
     const b = buildLadder('challenge', playable, 42);
     expect(a.map((s) => s.id)).toEqual(b.map((s) => s.id));
     expect(a.length).toBe(4);
-    for (let i = 1; i < a.length; i++) expect(a[i]!.length * a[i]!.height).toBeGreaterThanOrEqual(a[i - 1]!.length * a[i - 1]!.height);
+    for (let i = 1; i < a.length; i++) expect(a[i]!.length).toBeGreaterThanOrEqual(a[i - 1]!.length);
   });
 });
 

@@ -18,6 +18,8 @@ src/
   main.ts                 entry; mounts Game
   app/
     game.ts               controller: loop, input, audio, save, screen FSM, implements AppApi
+    feedback.ts           session feedback events -> particles + sound
+    layout.ts             whole-number canvas scaling
     api.ts                AppApi: the only surface UI screens may use
     screens.ts            Screen state machine + legal transition table
     save.ts               localStorage persistence; untrusted input is validated field by field
@@ -44,7 +46,7 @@ src/
     palette.ts            the fixed retro palette
     upgrades.ts           Evolution Mode mutations
     sandbox.ts            Custom Fish point-buy -> SpeciesDef
-    regions/florida/      zones, 22 creatures, 12 food items
+    regions/florida/      zones, 22 creatures, 12 food items (compact tables via define.ts builders)
   modes/
     session.ts            one run: modes, stages, lives, score, biomass, codex discoveries
   render/
@@ -56,7 +58,8 @@ src/
   ui/
     dom.ts                textContent-only DOM builder (no innerHTML anywhere)
     screens/*.ts          one ScreenView per menu screen
-tests/                    data invariants, food web, sim determinism/behaviour, sessions, save, sprites
+tests/                    Vitest: data invariants, food web, sim determinism/behaviour, sessions, save, sprites
+e2e/                      Playwright smoke tests driving every screen in a real browser
 ```
 
 ## Screen state machine
@@ -111,7 +114,7 @@ and suppress small native reef fish.
 |---|---|
 | Free Swim | any fish (or a custom fish); survive |
 | Evolution | as Free Swim; meals earn Biomass; Tab opens the mutation shop |
-| Tournament | every playable fish, smallest to largest; clear a stage by gaining 300% energy or surviving 120 s; 3 lives |
+| Tournament | every playable fish by body length, mosquitofish to great hammerhead; clear a stage by gaining 300% energy or surviving 120 s; 3 lives |
 | Challenge | four random fish from rising size quartiles; one life |
 
 ## Model delegation used to build this
@@ -121,11 +124,12 @@ and suppress small native reef fish.
 | Architecture, schema, sim, AI, food web, terrain, renderer, sprite generator, session, app controller, integration, balance, review | Opus |
 | Florida species + food data and codex text | Sonnet (validated by `validateRegion` tests + manual biology review) |
 | Six menu screens (briefing, paused, stage end, results, codex, help) | Sonnet (reviewed; one keyboard double-fire bug fixed) |
+| Playwright e2e suite + CI job; compact species tables | Sonnet (data refactor proven identical against a JSON snapshot) |
 | Bitmap font glyphs, upgrade table | Haiku (font visually reviewed; one description corrected) |
 
 ## Security
 
 - No `innerHTML` / `eval`; all text is set with `textContent` via `ui/dom.ts`
-- Strict CSP in `index.html`; fonts are bundled locally (no third-party requests)
+- Strict CSP in `index.html` (production builds drop the dev-only websocket allowance); fonts are bundled locally (no third-party requests)
 - Save data and custom fish specs are parsed defensively and validated field by field (tests cover hostile input)
 - The dev-only `window.__game` handle is stripped from production builds

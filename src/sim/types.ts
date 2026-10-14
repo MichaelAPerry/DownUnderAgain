@@ -56,7 +56,6 @@ export interface Entity {
 export type DeathCause = 'eaten' | 'starved' | 'parasites' | 'salinity' | 'stung';
 
 export interface SimEvents {
-  [key: string]: unknown;
   eat: { eater: Entity; prey: Entity; gain: number; points: number };
   biteFail: { eater: Entity; prey: Entity };
   sting: { attacker: Entity; prey: Entity; damage: number };

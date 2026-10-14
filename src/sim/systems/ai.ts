@@ -11,7 +11,10 @@ import { biomass } from '../stats';
 import type { Entity } from '../types';
 import type { World } from '../world';
 
-const scratch: Entity[] = [];
+// One query buffer per call site: world.near() clears its buffer, so a buffer
+// must never be shared between a loop and anything that runs inside it.
+const thinkBuf: Entity[] = [];
+const foodBuf: Entity[] = [];
 
 /** Fraction of max speed used when cruising. */
 export const CRUISE = 0.35;
@@ -36,7 +39,7 @@ export function aiThink(world: World, e: Entity): void {
     e.state = 'stunned';
     return;
   }
-  const near = world.near(e.x, e.y, e.stats.perception, scratch);
+  const near = world.near(e.x, e.y, e.stats.perception, thinkBuf);
   const hunger = 1 - e.energy / 100;
   const ambush = e.def.behavior.ambush;
   const isCleaner = e.def.behavior.cleaner;
@@ -320,7 +323,7 @@ export function steerFood(world: World, e: Entity, dt: number): void {
         e.thinkTimer = world.rng.range(0.3, 1.2);
         let fx = 0;
         let fy = 0;
-        for (const o of world.near(e.x, e.y, 28, scratch)) {
+        for (const o of world.near(e.x, e.y, 28, foodBuf)) {
           if (o !== e && o.alive && canEat(o, e)) {
             fx += e.x - o.x;
             fy += e.y - o.y;
