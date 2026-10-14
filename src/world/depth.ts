@@ -6,9 +6,9 @@
  * without an absurdly tall world.
  */
 export const SHALLOW_PX = 200;
-export const SHALLOW_M_PER_PX = 0.1;
+export const SHALLOW_M_PER_PX = 0.06;
 export const DEEP_M_PER_PX = 0.5;
-const SHALLOW_M = SHALLOW_PX * SHALLOW_M_PER_PX; // 20 m
+const SHALLOW_M = SHALLOW_PX * SHALLOW_M_PER_PX; // 12 m
 
 export function yToMeters(y: number): number {
   if (y <= 0) return 0;

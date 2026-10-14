@@ -132,7 +132,7 @@ export class Terrain {
     const zs = this.surfaceZones.filter((z) => z.id !== 'dropoff');
     const reef = this.zones.find((z) => z.id === 'reef');
     const drop = this.zones.find((z) => z.id === 'dropoff');
-    const reefFloor = reef?.floor ?? 160;
+    const reefFloor = reef?.floor ?? 196;
     const abyss = drop?.floor ?? this.height - 16;
     // Low-frequency value noise for gentle undulation.
     const knots: number[] = [];
@@ -199,9 +199,10 @@ export class Terrain {
           for (let x = x0 + 120; x < x1 - 80; x += rng.int(170, 240)) {
             const w = rng.int(40, 60);
             const floorY = Math.round(this.floorAt(x + w / 2));
-            this.decor.push({ type: 'mangrove', x, y: -22, w, h: floorY + 22, variant: rng.int(0, 2) });
+            // Prop roots hang through the upper water; big fish pass beneath.
             const rootTop = SURFACE_Y;
-            const rootBottom = Math.min(floorY, 70);
+            const rootBottom = Math.min(floorY - 30, 90);
+            this.decor.push({ type: 'mangrove', x, y: -22, w, h: rootBottom + 22, variant: rng.int(0, 2) });
             this.roots.push({ x0: x, x1: x + w, y0: rootTop, y1: rootBottom });
             this.cover.push({ x0: x, x1: x + w, y0: rootTop, y1: rootBottom, maxLength: 20 });
           }
