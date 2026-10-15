@@ -63,11 +63,8 @@ export const codexScreen: ScreenView = (app) => {
         'button',
         {
           class: 'card-button flex flex-col items-center gap-1',
-          attrs: { type: 'button' },
-          onClick: () => {
-            app.sfx('select');
-            show(def);
-          },
+          attrs: { type: 'button', 'data-sfx': 'select' },
+          onClick: () => show(def),
         },
         sprite(def, def.length < 10 ? 3 : 2, !known(def)),
         h('span', { class: 'text-[8px] text-center', text: known(def) ? def.name : '???' }),

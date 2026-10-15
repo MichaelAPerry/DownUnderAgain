@@ -33,9 +33,9 @@ export const sandboxScreen: ScreenView = (app) => {
         ...options.map((o) => {
           const b = button((names ? names(o) : o).toUpperCase(), () => {
             set(o);
-            app.sfx('select');
             render();
           }, { small: true, primary: o === current });
+          b.dataset.sfx = 'select';
           b.setAttribute('aria-pressed', String(o === current));
           return b;
         }),

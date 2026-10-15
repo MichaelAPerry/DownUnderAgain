@@ -13,7 +13,8 @@
     "check": "npm run typecheck && vitest run",
     "e2e": "playwright test",
     "sprites": "vitest run --config tools/vitest.tools.config.ts",
-    "screenshots": "node tools/screenshots.mjs"
+    "screenshots": "node tools/screenshots.mjs",
+    "music": "node tools/renderMusic.mjs"
   },
   "license": "MIT",
   "devDependencies": {

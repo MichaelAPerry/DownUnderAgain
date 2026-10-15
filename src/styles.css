@@ -102,3 +102,23 @@
 #ui > * {
   pointer-events: auto;
 }
+
+/* Title menu entrance. */
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.menu-in {
+  animation: menu-in 0.35s steps(6, end) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .menu-in {
+    animation: none;
+  }
+}

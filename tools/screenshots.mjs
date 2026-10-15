@@ -30,6 +30,10 @@ await page.goto(URL);
 await page.waitForFunction(() => window.__game?.screen === 'title');
 await page.waitForTimeout(1200);
 await page.screenshot({ path: `${OUT}/title.png` });
+await page.keyboard.press('Enter');
+await page.getByRole('button', { name: 'PLAY', exact: true }).waitFor();
+await page.waitForTimeout(500);
+await page.screenshot({ path: `${OUT}/title-menu.png` });
 
 for (const [id, mode, x, y, name] of SHOTS) {
   await page.evaluate(() => { if (window.__game.screen !== 'title') window.__game.quit(); });

@@ -11,6 +11,8 @@ export type ModeId = (typeof MODE_IDS)[number];
 export interface SaveData {
   v: 1;
   muted: boolean;
+  /** Background music on (sound effects follow `muted`). */
+  music: boolean;
   cues: boolean;
   codex: string[];
   best: Partial<Record<ModeId, number>>;
@@ -21,7 +23,7 @@ const KEY = 'downUnderAgain.save.v1';
 const MAX_BYTES = 64 * 1024;
 
 export function defaultSave(): SaveData {
-  return { v: 1, muted: false, cues: true, codex: [], best: {}, custom: null };
+  return { v: 1, muted: false, music: true, cues: true, codex: [], best: {}, custom: null };
 }
 
 /** Parse and validate raw JSON text; anything suspicious is dropped. */
@@ -38,6 +40,7 @@ export function parseSave(raw: string | null, knownIds: ReadonlySet<string>): Sa
   const o = data as Record<string, unknown>;
   if (o.v !== 1) return out;
   if (typeof o.muted === 'boolean') out.muted = o.muted;
+  if (typeof o.music === 'boolean') out.music = o.music;
   if (typeof o.cues === 'boolean') out.cues = o.cues;
   if (Array.isArray(o.codex)) {
     out.codex = [...new Set(o.codex.filter((id): id is string => typeof id === 'string' && knownIds.has(id)))];

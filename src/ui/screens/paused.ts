@@ -6,6 +6,11 @@ export const pausedScreen: ScreenView = (app) => {
     app.setMuted(!app.save.muted);
     mute.textContent = app.save.muted ? 'SOUND: OFF' : 'SOUND: ON';
   });
+  const musicLabel = (): string => (app.save.music ? 'MUSIC: ON' : 'MUSIC: OFF');
+  const music = button(musicLabel(), () => {
+    app.setMusic(!app.save.music);
+    music.textContent = musicLabel();
+  });
   const cuesLabel = (): string => (app.save.cues ? 'FOOD-WEB CUES: ON' : 'FOOD-WEB CUES: OFF');
   const cues = button(cuesLabel(), () => {
     app.setCues(!app.save.cues);
@@ -19,6 +24,7 @@ export const pausedScreen: ScreenView = (app) => {
       button('RESUME', () => app.resume(), { primary: true }),
       button('HOW TO PLAY', () => app.go('help')),
       mute,
+      music,
       cues,
       button('QUIT TO TITLE', () => app.quit()),
     ),

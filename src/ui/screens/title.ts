@@ -1,43 +1,45 @@
 import { button, h } from '../dom';
 import type { ScreenView } from './types';
 
+/**
+ * The logo, prompt and foreground swimmers are drawn on the canvas
+ * (render/titleScreen.ts). Before the player starts, the whole screen is a
+ * click target ("press any key" also works); afterwards the menu slides in,
+ * aligned to the canvas just under the logo.
+ */
 export const titleScreen: ScreenView = (app) => {
-  const mute = button(app.save.muted ? 'SOUND: OFF' : 'SOUND: ON', () => {
+  if (!app.started) {
+    return h('button', {
+      class: 'absolute inset-0 w-full h-full cursor-pointer bg-transparent border-0',
+      attrs: { type: 'button', 'aria-label': 'Start the game', 'data-sfx': 'none' },
+      onClick: () => app.start(),
+    });
+  }
+  const soundLabel = () => (app.save.muted ? 'SOUND: OFF' : 'SOUND: ON');
+  const musicLabel = () => (app.save.music ? 'MUSIC: ON' : 'MUSIC: OFF');
+  const sound = button(soundLabel(), () => {
     app.setMuted(!app.save.muted);
-    mute.textContent = app.save.muted ? 'SOUND: OFF' : 'SOUND: ON';
+    sound.textContent = soundLabel();
+  }, { small: true });
+  const music = button(musicLabel(), () => {
+    app.setMusic(!app.save.music);
+    music.textContent = musicLabel();
   }, { small: true });
   const seen = app.save.codex.length;
   const total = app.region.all.length;
   return h(
     'div',
-    { class: 'screen flex-col gap-6' },
+    {
+      class: 'absolute left-0 right-0 flex flex-col items-center gap-3 menu-in',
+      style: { top: 'calc(var(--cv-top, 0px) + var(--cv-h, 100vh) * 0.48)' },
+    },
     h(
       'div',
-      { class: 'text-center' },
-      h('h1', {
-        class: 'text-2xl sm:text-4xl text-yellow tracking-widest leading-tight',
-        text: 'DOWN UNDER',
-        style: { textShadow: '4px 4px 0 #141420, -2px -2px 0 #ef7d57' },
-      }),
-      h('h1', {
-        class: 'text-xl sm:text-3xl text-cyan tracking-widest mt-2',
-        text: 'AGAIN',
-        style: { textShadow: '4px 4px 0 #141420' },
-      }),
-      h('p', { class: 'mt-4 text-[10px] text-cream', text: 'FLORIDA: RIVER TO REEF', style: { textShadow: '2px 2px 0 #141420' } }),
-    ),
-    h(
-      'div',
-      { class: 'flex flex-col gap-3 w-56' },
+      { class: 'flex flex-col gap-2 w-56' },
       button('PLAY', () => app.go('modeSelect'), { primary: true }),
       button(`REEF CODEX ${seen}/${total}`, () => app.go('codex')),
       button('HOW TO PLAY', () => app.go('help')),
     ),
-    h('div', { class: 'flex gap-3 items-center' }, mute),
-    h('p', {
-      class: 'absolute bottom-2 left-0 right-0 text-center text-[8px] text-silver',
-      text: 'A spiritual successor to the 1994 classic. Fan-made, not affiliated.',
-      style: { textShadow: '1px 1px 0 #141420' },
-    }),
+    h('div', { class: 'flex gap-2' }, sound, music),
   );
 };

@@ -61,6 +61,11 @@ export class Input {
     return this.pressed.has(code);
   }
 
+  /** True if any key was pressed this frame. */
+  anyPressed(): boolean {
+    return this.pressed.size > 0;
+  }
+
   endFrame(): void {
     this.pressed.clear();
   }

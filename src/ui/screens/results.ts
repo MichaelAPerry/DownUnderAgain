@@ -49,10 +49,7 @@ export const resultsScreen: ScreenView = (app) => {
     h(
       'div',
       { class: 'mt-4 flex gap-3 flex-wrap justify-center' },
-      button('PLAY AGAIN', () => {
-        app.sfx('confirm');
-        app.playAgain();
-      }, { primary: true }),
+      button('PLAY AGAIN', () => app.playAgain(), { primary: true }),
       button('CHANGE MODE', () => app.go('modeSelect')),
       button('TITLE', () => app.quit()),
     ),
