@@ -10,9 +10,9 @@ import { Buf, Mask, P, bayer, ditherLevel, ih, ramp, w, word } from './pix';
 
 // ---- shared shading -------------------------------------------------------
 
-const LX = -0.45;
-const LY = -0.72;
-const LZ = 0.53;
+const LX = -0.6;
+const LY = -0.55;
+const LZ = 0.3;
 const LN = Math.hypot(LX, LY, LZ);
 
 const at = (r: readonly number[], i: number): number => r[i < 0 ? 0 : i >= r.length ? r.length - 1 : i] ?? 0;
@@ -60,7 +60,7 @@ function dome(buf: Buf, x0: number, base: number, wd: number, h: number, rp: rea
       const nz = Math.sqrt(Math.max(0, 1 - d));
       const nl = Math.hypot(u, v, nz) || 1;
       const I = (u * LX + v * LY + nz * LZ) / (nl * LN);
-      const lvl = Math.min(n - 1, Math.max(0, (0.92 - I) * 0.95 * (n - 1)));
+      const lvl = Math.min(n - 1, Math.max(0, ((0.95 - I) * (n - 1)) / 1.45));
       let idx = Math.min(n - 1, ditherLevel(lvl, x, y, 3));
       let c: number;
       if (!o.noLine && (q(x + 1, y) < 0 || q(x, y + 1) < 0) && (u > -0.2 || v > -0.25)) {
@@ -85,9 +85,9 @@ function skirt(buf: Buf, env: Env, x0: number, x1: number, base: number, c: numb
 // ---- colour ramps ---------------------------------------------------------
 
 const LIME_STONE = [
-  ramp('white', ['cream', 'silver', 0.5], 'silver', ['silver', 'grey', 0.55], 'grey', ['darkgrey', 'charcoal', 0.3]),
-  ramp('cream', ['cream', 'grey', 0.35], ['tan', 'grey', 0.45], ['grey', 'brown', 0.3], ['darkgrey', 'brown', 0.3], ['darkgrey', 'bark', 0.4]),
-  ramp('white', 'silver', ['silver', 'slate', 0.5], 'slate', ['slate', 'charcoal', 0.55], 'charcoal'),
+  ramp('white', ['cream', 'grey', 0.28], ['cream', 'grey', 0.55], ['tan', 'darkgrey', 0.45], ['grey', 'darkgrey', 0.6], ['darkgrey', 'charcoal', 0.4]),
+  ramp('cream', ['sand', 'grey', 0.35], ['tan', 'grey', 0.45], ['tan', 'darkgrey', 0.5], ['brown', 'darkgrey', 0.5], 'bark'),
+  ramp(['white', 'silver', 0.5], 'silver', ['silver', 'slate', 0.5], 'slate', ['slate', 'charcoal', 0.5], 'charcoal'),
 ];
 const BASALT = ramp('slate', ['slate', 'charcoal', 0.5], 'charcoal', ['charcoal', 'ink', 0.4], ['charcoal', 'ink', 0.7], 'ink');
 const OYSTER = ramp(['grey', 'mud', 0.35], ['grey', 'mud', 0.55], ['darkgrey', 'mud', 0.5], 'mud', ['mud', 'bark', 0.5], 'bark');

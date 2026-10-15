@@ -39,12 +39,12 @@ const DEFS: Record<FoodSpriteId, { frames: string[][]; legend: Record<string, st
       ['.c.c', 'cwc.', '.cw.', '..t.'],
     ],
   },
-  // Fish larva: big eye, yolk sac, flicking tail.
+  // Mosquito larva: dark head, segmented body, breathing siphon up to the surface; wriggles.
   larva: {
-    legend: { k: P.ink, t: P.tan, c: P.cream, y: P.yellow },
+    legend: { k: P.ink, b: P.brown, t: P.tan },
     frames: [
-      ['ktc', 'y..'],
-      ['kt.', 'y.c'],
+      ['..t', 'kbb'],
+      ['.t.', 'kb.'],
     ],
   },
   // Shrimp: banded translucent body, antenna, walking legs.
@@ -63,7 +63,7 @@ const DEFS: Record<FoodSpriteId, { frames: string[][]; legend: Record<string, st
       ['.ok.ko.', 'bssbssb', '.bbbbn.', '.n.n.n.'],
     ],
   },
-  // Bloodworm wriggling, orange head.
+  // Bristle worm (polychaete) wriggling, orange head.
   worm: {
     legend: { r: P.red, p: P.pink, o: P.orange, c: P.crimson },
     frames: [

@@ -308,7 +308,8 @@ export class WorldRenderer {
         const img = this.rays[r % this.rays.length];
         if (!img) continue;
         ctx.globalAlpha = 0.7 + 0.3 * Math.sin(time * 0.6 + r * 1.7);
-        ctx.drawImage(img, Math.round(x0), surf, img.width, Math.min(RAY_H, 90 + Math.floor(hash(r + 7) * 70)) );
+        const len = Math.min(RAY_H, 100 + Math.floor(hash(r + 7) * 60));
+        ctx.drawImage(img, 0, 0, img.width, len, Math.round(x0), surf, img.width, len);
       }
       ctx.globalAlpha = 1;
     }
@@ -334,10 +335,10 @@ export class WorldRenderer {
       ctx.fillRect(0, 0, VIEW_W, surf - SKY_BAKE_H);
     }
     if (this.sun) ctx.drawImage(this.sun, Math.round(252 - cx * 0.012) - 9, surf - 31);
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < 8; i++) {
       const img = this.clouds[i % this.clouds.length];
       if (!img) continue;
-      const x = Math.round(mod(hash(i + 50) * 1500 - cx * 0.12 + time * 1.5, 1500)) - 100;
+      const x = Math.round(mod(i * 150 + hash(i + 50) * 90 - cx * 0.12 + time * 1.5, 1200)) - 100;
       const y = surf - img.height - 4 - Math.floor(hash(i + 9) * 14);
       if (x > -img.width && x < VIEW_W && y + img.height < surf - 2) ctx.drawImage(img, x, y);
     }
@@ -408,19 +409,19 @@ export class WorldRenderer {
   /** Dancing caustic light on the sunlit sand. */
   private drawCaustics(ctx: CanvasRenderingContext2D, cx: number, cy: number, time: number): void {
     if (cy > 120) return;
-    ctx.fillStyle = 'rgba(244,244,244,0.26)';
+    ctx.fillStyle = 'rgba(244,244,244,0.42)';
     for (let sx = 0; sx < VIEW_W; sx += 2) {
       const wx = cx + sx;
       const f = this.env.F(wx);
       if (f > 240) continue;
       const sy = f - cy;
-      if (sy < 0 || sy >= VIEW_H) continue;
+      if (sy < -10 || sy >= VIEW_H) continue;
       const murky = wx > 1200 && wx < 2400;
-      const thr = murky ? 1.75 : 1.3;
-      for (let k = 0; k < 6; k += 2) {
+      const thr = murky ? 1.7 : 1.2;
+      for (let k = 1; k < 10; k += 2) {
         const y = f + k;
-        const v = Math.sin(wx * 0.19 + time * 1.3 + Math.sin(y * 0.5 + time * 0.6 + wx * 0.05) * 1.8) + Math.sin(wx * 0.083 - time * 0.9 + k * 0.7);
-        if (v > thr + k * 0.08) ctx.fillRect(sx, sy + k, 2, 1);
+        const v = Math.sin(wx * 0.19 + time * 1.3 + Math.sin(y * 0.5 + time * 0.6 + wx * 0.05) * 1.8) + Math.sin(wx * 0.083 - time * 0.9 + k * 0.45);
+        if (v > thr + k * 0.05) ctx.fillRect(sx, sy + k, 2, 1);
       }
     }
   }

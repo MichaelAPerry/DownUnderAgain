@@ -50,9 +50,11 @@ src/
   modes/
     session.ts            one run: modes, stages, lives, score, biomass, codex discoveries
   render/
-    worldRenderer.ts      sky, water, rays, parallax, terrain, props, sprites, darkness, glow, particles
+    worldRenderer.ts      composes the frame: baked scenery, live water effects, sprites, darkness, glow, particles
+    env/                  scenery art: chunk cache (tiles), ground materials, props, sky/water backdrop
+    art/                  colour ramps and raster helpers for the fish sprite generator
     hud.ts                meters, warnings, threat arrows, toasts
-    fishSprite.ts         procedural fish sprites from `look` (shape, colours, pattern)
+    fishSprite.ts         procedural shaded fish sprites from `look` (shape, colours, pattern)
     foodSprites.ts        hand-drawn plant / invertebrate sprites
     spriteCache.ts font.ts fontGlyphs.ts pixelSprite.ts
   ui/
@@ -125,7 +127,20 @@ and suppress small native reef fish.
 | Florida species + food data and codex text | Sonnet (validated by `validateRegion` tests + manual biology review) |
 | Six menu screens (briefing, paused, stage end, results, codex, help) | Sonnet (reviewed; one keyboard double-fire bug fixed) |
 | Playwright e2e suite + CI job; compact species tables | Sonnet (data refactor proven identical against a JSON snapshot) |
+| Shaded fish sprite generator; baked environment art and food sprites | Opus art passes (reviewed against rendered sheets and in-game screenshots) |
 | Bitmap font glyphs, upgrade table | Haiku (font visually reviewed; one description corrected) |
+
+## Rendering performance
+
+Static scenery (terrain, props, distant silhouettes) is painted once into
+256×128 world-space chunk canvases the first time each comes into view, in
+four layers (far/near silhouettes, props behind fish, foreground). Up to 56
+chunks are cached with least-recently-used eviction. Only animated details
+(grass sway, caustics, light rays, surface, particles) are drawn live, which
+keeps every zone at 60 fps.
+
+Art tools: `npm run sprites` renders a contact sheet of every creature;
+`npm run screenshots` captures each zone in a real browser.
 
 ## Security
 

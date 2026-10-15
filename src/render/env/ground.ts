@@ -212,7 +212,9 @@ function spring(x: number, y: number, d: number, e: number, side: number, wob: F
     const bed = y + Math.round(vnoise(x / 26, 6) * 2);
     if (bed % 8 === 0 && ih(x >> 3, bed, 34) < 0.85) return pick(SPR, L + 2);
     if (bed % 8 === 1 && ih(x >> 3, bed - 1, 34) < 0.85) return pick(SPR, L - 1);
-    if (bed % 8 > 1 && (x + (bed >> 3) * 11) % 23 === 0) return pick(SPR, L + 1);
+    const row = Math.floor(bed / 8);
+    const span = 14 + Math.floor(ih(row, 0, 35) * 16);
+    if (bed % 8 > 1 && (x + Math.floor(ih(row, 1, 35) * 40)) % span === 0 && ih(Math.floor(x / span), row, 36) < 0.7) return pick(SPR, L + 1);
     const cx = Math.floor(x / 6);
     const cy = Math.floor(y / 5);
     if (ih(cx, cy, 31) < 0.3) {
@@ -292,12 +294,12 @@ function reef(x: number, y: number, d: number, e: number, side: number, wob: Flo
   if (L >= 5) {
     const cx = Math.floor(x / 12);
     const cy = Math.floor(y / 10);
-    if (ih(cx, cy, 63) < 0.25) {
-      const ox = cx * 12 + 6;
-      const oy = cy * 10 + 5;
+    if (ih(cx, cy, 63) < 0.07) {
+      const ox = cx * 12 + 3 + Math.floor(ih(cx, cy, 64) * 6);
+      const oy = cy * 10 + 3 + Math.floor(ih(cx, cy, 65) * 4);
       const r2 = (x - ox) * (x - ox) + (y - oy) * (y - oy);
-      if (r2 >= 4 && r2 <= 7) return pick(REF, L - 2);
-      if (r2 <= 1) return pick(REF, L + 1);
+      if (r2 >= 3 && r2 <= 6 && (x < ox || y < oy)) return pick(REF, L - 1);
+      if (r2 >= 3 && r2 <= 6) return pick(REF, L + 1);
     }
   }
   const s = ih(x >> 1, y, 3);
