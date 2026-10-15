@@ -1,14 +1,18 @@
 /**
  * Draws the world onto the 384x216 low-res canvas: sky, water, light rays,
- * parallax ridge, terrain, props, creatures, food-web cues, depth darkness,
- * bioluminescence and particles. Render-only state (particles) lives here;
- * the simulation is read, never written.
+ * parallax silhouettes, baked terrain and props, creatures, food-web cues,
+ * depth darkness, bioluminescence and particles. Render-only state
+ * (particles, baked chunks) lives here; the simulation is read, never written.
+ *
+ * Static scenery is painted once into world-space chunks (see env/tiles.ts)
+ * and blitted each frame; only grass sway, caustics, rays, the surface and
+ * particles are drawn live.
  */
 import { PALETTE, mixHex } from '../data/palette';
 import { Camera, VIEW_H, VIEW_W } from '../engine/camera';
 import { clamp } from '../engine/math';
 import { yToMeters } from '../world/depth';
-import { COL_W, SALINITY_BLEND } from '../world/terrain';
+import { SALINITY_BLEND } from '../world/terrain';
 import type { Decor } from '../world/terrain';
 import type { World } from '../sim/world';
 import type { Entity } from '../sim/types';
@@ -16,6 +20,13 @@ import { relation } from '../sim/foodWeb';
 import { noticeRange } from '../sim/systems/ai';
 import { drawSprite, spriteFor } from './spriteCache';
 import { drawText } from './font';
+import { Env, bakeGround } from './env/ground';
+import { makeDecorations, paintDeco, paintDecor, paintMangrove } from './env/props';
+import type { Deco } from './env/props';
+import { Layer, TILE_H, TILE_W, TileCache } from './env/tiles';
+import type { Buf } from './env/pix';
+import { ih, vnoise } from './env/pix';
+import { PARALLAX, RAY_H, SKY_BAKE_H, STRIP_W, WaterStrips, bakeParallax, makeClouds, makeRays, makeSky, makeSun } from './env/backdrop';
 
 const P = PALETTE;
 const DARK_STEPS = 32;
@@ -39,6 +50,8 @@ const hash = (n: number): number => {
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 };
 
+const mod = (a: number, m: number): number => ((a % m) + m) % m;
+
 export interface DrawOptions {
   /** Show eat/danger cues around the player. */
   cues: boolean;
@@ -49,6 +62,30 @@ export interface DrawOptions {
 /** Radii (px) of the stepped light pool around the player in dark water. */
 const LIGHT_RINGS = [78, 60, 44, 30];
 
+/** Margin (px) by which props can overhang their decor x when baking chunks. */
+const PROP_MARGIN = 48;
+
+/** One live, swaying grass blade. */
+interface Blade {
+  x: number;
+  base: number;
+  h: number;
+  wide: boolean;
+  phase: number;
+  amp: number;
+  front: boolean;
+  /** Palette set index: 0 eelgrass, 1 turtle grass, 2 front (shadowed), 3 turtle with epiphyte tip. */
+  set: number;
+}
+
+const BLADE_SETS: readonly (readonly string[])[] = [
+  // dark base, mid, light, tip
+  [P.forest, mixHex(P.seafoam, P.forest, 0.45), P.seafoam, P.lime],
+  [P.forest, P.seafoam, mixHex(P.seafoam, P.lime, 0.45), P.lime],
+  [mixHex(P.forest, P.ink, 0.3), P.forest, P.moss, P.olive],
+  [P.forest, P.seafoam, mixHex(P.seafoam, P.lime, 0.45), P.tan],
+];
+
 export class WorldRenderer {
   private readonly waterCols: string[] = [];
   private readonly particles: Particle[] = [];
@@ -56,19 +93,31 @@ export class WorldRenderer {
   private ventTimer = 0;
   private readonly decor: Decor[];
   private darkLayer: HTMLCanvasElement | null = null;
+  private readonly env: Env;
+  private readonly tiles: TileCache;
+  private readonly strips: WaterStrips;
+  private readonly decos: Deco[];
+  private readonly mangroves: Decor[];
+  private readonly blades: Blade[] = [];
+  private sky: HTMLCanvasElement | null = null;
+  private sun: HTMLCanvasElement | null = null;
+  private clouds: HTMLCanvasElement[] = [];
+  private rays: HTMLCanvasElement[] = [];
 
   constructor(private readonly world: World) {
     const t = world.terrain;
     const surface = world.region.zones.filter((z) => z.id !== 'deep').slice().sort((a, b) => a.x[0] - b.x[0]);
     const half = SALINITY_BLEND / 2;
-    for (let x = 0; x < t.width; x += 8) {
+    for (let x = 0; x < t.width; x += STRIP_W) {
       let color: string = P.blue;
       for (let i = 0; i < surface.length; i++) {
         const z = surface[i];
         if (!z) continue;
         const next = surface[i + 1];
         if (next && x >= z.x[1] - half && x <= z.x[1] + half) {
-          color = mixHex(P[z.water], P[next.water], (x - (z.x[1] - half)) / SALINITY_BLEND);
+          // Quantised blend so only a handful of gradient strips get baked.
+          const k = Math.round(((x - (z.x[1] - half)) / SALINITY_BLEND) * 6) / 6;
+          color = mixHex(P[z.water], P[next.water], k);
           break;
         }
         if (x < z.x[1] || !next) {
@@ -79,6 +128,64 @@ export class WorldRenderer {
       this.waterCols.push(color);
     }
     this.decor = t.decor.slice().sort((a, b) => a.x - b.x);
+    this.env = new Env(t, world.region.zones);
+    this.strips = new WaterStrips(t.height);
+    this.decos = makeDecorations(this.env).sort((a, b) => a.x - b.x);
+    this.mangroves = this.decor.filter((d) => d.type === 'mangrove');
+    this.buildBlades();
+    const env = this.env;
+    const half2 = VIEW_W / 2;
+    this.tiles = new TileCache([
+      (buf) => bakeParallax(env, buf, false, half2),
+      (buf) => bakeParallax(env, buf, true, half2),
+      (buf) => this.bakeBack(buf),
+      (buf) => this.bakeFront(buf),
+    ]);
+  }
+
+  /** Baked-chunk stats (for profiling / tests). */
+  get cacheStats(): { canvases: number; entries: number; bakes: number; bakeMs: number } {
+    return { ...this.tiles.size, bakes: this.tiles.totalBakes, bakeMs: Math.round(this.tiles.bakeMs) };
+  }
+
+  private buildBlades(): void {
+    for (const d of this.decor) {
+      if (d.type !== 'grass') continue;
+      const turtle = this.env.zone(d.x) === 'seagrass';
+      const front = d.variant === 2;
+      const n = 2 + (ih(d.x, 0, 501) < 0.5 ? 1 : 0);
+      for (let k = 0; k < n; k++) {
+        const x = d.x + (turtle ? k * 2 - 1 : k - 1) + (ih(d.x, k, 502) < 0.3 ? 1 : 0);
+        const h = Math.max(4, Math.round(d.h * (0.6 + ih(d.x, k, 503) * 0.45)));
+        let set = turtle ? 1 : 0;
+        if (front) set = 2;
+        else if (turtle && ih(d.x, k, 504) < 0.3) set = 3;
+        this.blades.push({ x, base: this.env.F(x) + 1, h, wide: turtle, phase: d.x * 0.3 + k * 0.9, amp: 1.2 + ih(d.x, k, 505) * 1.4, front, set });
+      }
+    }
+    this.blades.sort((a, b) => a.x - b.x);
+  }
+
+  // ---- chunk bakers --------------------------------------------------------
+
+  private bakeBack(buf: Buf): void {
+    const lo = buf.x0 - PROP_MARGIN;
+    const hi = buf.x0 + buf.w + PROP_MARGIN;
+    for (let i = lowerBound(this.decos, lo); i < this.decos.length; i++) {
+      const d = this.decos[i] as Deco;
+      if (d.x > hi) break;
+      paintDeco(buf, this.env, d);
+    }
+    for (let i = lowerBound(this.decor, lo); i < this.decor.length; i++) {
+      const d = this.decor[i] as Decor;
+      if (d.x > hi) break;
+      if (d.type !== 'mangrove') paintDecor(buf, this.env, d);
+    }
+  }
+
+  private bakeFront(buf: Buf): void {
+    for (const m of this.mangroves) paintMangrove(buf, m);
+    bakeGround(this.env, buf);
   }
 
   // ---- particles ---------------------------------------------------------
@@ -105,74 +212,105 @@ export class WorldRenderer {
   draw(ctx: CanvasRenderingContext2D, cam: Camera, alpha: number, time: number, frameDt: number, opts: DrawOptions): void {
     const cx = Math.round(cam.x);
     const cy = Math.round(cam.y);
+    this.tiles.bakes = 0;
     this.drawBackdrop(ctx, cx, cy, time, frameDt);
-    this.drawDecor(ctx, cx, cy, time, false);
+    this.drawLayer(ctx, Layer.Back, cx, cy);
+    this.drawGrass(ctx, cx, cy, time, false);
     this.drawEntities(ctx, cx, cy, alpha, time, opts);
-    this.drawDecor(ctx, cx, cy, time, true);
-    this.drawTerrain(ctx, cx, cy);
+    this.drawGrass(ctx, cx, cy, time, true);
+    this.drawLayer(ctx, Layer.Front, cx, cy);
+    this.drawCaustics(ctx, cx, cy, time);
+    this.drawSurface(ctx, cx, cy, time);
     this.drawDarkness(ctx, cx, cy, alpha);
     this.drawGlow(ctx, cx, cy, alpha);
     this.drawSnow(ctx, cy, time);
     this.updateParticles(ctx, cx, cy, frameDt, time);
     if (opts.cues) this.drawCues(ctx, cx, cy, alpha, time);
+    this.prefetch(cx, cy);
+  }
+
+  /** Layer-space origin of the screen for a layer. */
+  private origin(layer: Layer, cx: number): number {
+    if (layer === Layer.Far) return Math.round(cx * PARALLAX[0]);
+    if (layer === Layer.Near) return Math.round(cx * PARALLAX[1]);
+    return cx;
+  }
+
+  private layerWidth(layer: Layer): number {
+    const W = this.env.width;
+    if (layer === Layer.Far) return (W - VIEW_W) * PARALLAX[0] + VIEW_W;
+    if (layer === Layer.Near) return (W - VIEW_W) * PARALLAX[1] + VIEW_W;
+    return W;
+  }
+
+  private tileInRange(layer: Layer, tx: number, ty: number): boolean {
+    return tx >= 0 && tx * TILE_W < this.layerWidth(layer) && ty >= -1 && ty * TILE_H < this.env.height;
+  }
+
+  private drawLayer(ctx: CanvasRenderingContext2D, layer: Layer, cx: number, cy: number): void {
+    const ox = this.origin(layer, cx);
+    const tx0 = Math.floor(ox / TILE_W);
+    const tx1 = Math.floor((ox + VIEW_W - 1) / TILE_W);
+    const ty0 = Math.floor(cy / TILE_H);
+    const ty1 = Math.floor((cy + VIEW_H - 1) / TILE_H);
+    for (let ty = ty0; ty <= ty1; ty++) {
+      for (let tx = tx0; tx <= tx1; tx++) {
+        if (!this.tileInRange(layer, tx, ty)) continue;
+        const c = this.tiles.get(layer, tx, ty);
+        if (c) ctx.drawImage(c, tx * TILE_W - ox, ty * TILE_H - cy);
+      }
+    }
+  }
+
+  /** Bake at most one off-screen neighbour chunk per idle frame, so scrolling never hitches. */
+  private prefetch(cx: number, cy: number): void {
+    if (this.tiles.bakes > 0) return;
+    const ty0 = Math.floor(cy / TILE_H);
+    const ty1 = Math.floor((cy + VIEW_H - 1) / TILE_H);
+    for (const layer of [Layer.Front, Layer.Back, Layer.Near, Layer.Far]) {
+      const ox = this.origin(layer, cx);
+      const tx0 = Math.floor((ox - 48) / TILE_W);
+      const tx1 = Math.floor((ox + VIEW_W + 48) / TILE_W);
+      for (let ty = ty0 - (cy % TILE_H < 40 ? 1 : 0); ty <= ty1 + ((cy + VIEW_H) % TILE_H > TILE_H - 40 ? 1 : 0); ty++) {
+        for (let tx = tx0; tx <= tx1; tx++) {
+          if (!this.tileInRange(layer, tx, ty) || this.tiles.has(layer, tx, ty)) continue;
+          this.tiles.get(layer, tx, ty);
+          return;
+        }
+      }
+    }
   }
 
   private drawBackdrop(ctx: CanvasRenderingContext2D, cx: number, cy: number, time: number, frameDt: number): void {
-    const t = this.world.terrain;
     const surf = -cy; // screen y of the water surface
-    if (surf > 0) {
-      ctx.fillStyle = P.sky;
-      ctx.fillRect(0, 0, VIEW_W, surf);
-      ctx.fillStyle = P.white;
-      for (let i = 0; i < 6; i++) {
-        const w = 18 + Math.floor(hash(i) * 30);
-        const x = Math.round((hash(i + 50) * 1400 - cx * 0.2 + time * 2) % 1400) - 100;
-        const y = 3 + Math.floor(hash(i + 9) * Math.max(1, surf - 12));
-        if (x > -w && x < VIEW_W && y < surf - 4) {
-          ctx.fillRect(x, y, w, 3);
-          ctx.fillRect(x + 4, y - 2, w - 10, 2);
-        }
-      }
-    }
-    // Water columns.
+    if (surf > 0) this.drawSky(ctx, cx, surf, time);
+    // Water: world-anchored dithered gradient strips.
     const top = Math.max(0, surf);
-    const startCol = Math.floor(cx / 8);
-    for (let i = 0; i <= VIEW_W / 8 + 1; i++) {
-      const col = startCol + i;
-      ctx.fillStyle = this.waterCols[clamp(col, 0, this.waterCols.length - 1)] ?? P.blue;
-      ctx.fillRect(col * 8 - cx, top, 8, VIEW_H - top);
+    if (top < VIEW_H) {
+      const startCol = Math.floor(cx / STRIP_W);
+      const h = VIEW_H - top;
+      for (let i = 0; i <= VIEW_W / STRIP_W + 1; i++) {
+        const col = startCol + i;
+        const base = this.waterCols[clamp(col, 0, this.waterCols.length - 1)] ?? P.blue;
+        ctx.drawImage(this.strips.get(base), 0, top + cy, STRIP_W, h, col * STRIP_W - cx, top, STRIP_W, h);
+      }
     }
+    // Distant silhouettes, two parallax planes.
+    this.drawLayer(ctx, Layer.Far, cx, cy);
+    this.drawLayer(ctx, Layer.Near, cx, cy);
     // Light rays in the sunlit band.
-    if (cy < 140) {
-      ctx.fillStyle = 'rgba(244,244,244,0.07)';
-      for (let r = 0; r < 6; r++) {
-        const base = Math.floor(hash(r + 100) * 1600);
-        const x0 = ((base - cx * 0.7 + Math.sin(time * 0.3 + r) * 10) % 1600) - 200;
-        const len = 90 + Math.floor(hash(r + 7) * 60);
-        for (let k = 0; k < len; k += 2) {
-          const y = surf + k;
-          if (y < 0 || y >= VIEW_H) continue;
-          ctx.fillRect(Math.round(x0 + k * 0.45), y, 10 - Math.floor(k / 24), 2);
-        }
+    if (cy < 150) {
+      if (this.rays.length === 0) this.rays = makeRays();
+      for (let r = 0; r < 7; r++) {
+        const base = Math.floor(hash(r + 100) * 1700);
+        const x0 = mod(base - cx * 0.7 + Math.sin(time * 0.3 + r) * 10, 1700) - 220;
+        if (x0 > VIEW_W || x0 < -80) continue;
+        const img = this.rays[r % this.rays.length];
+        if (!img) continue;
+        ctx.globalAlpha = 0.7 + 0.3 * Math.sin(time * 0.6 + r * 1.7);
+        ctx.drawImage(img, Math.round(x0), surf, img.width, Math.min(RAY_H, 90 + Math.floor(hash(r + 7) * 70)) );
       }
-    }
-    // Distant ridge (parallax).
-    for (let sx = 0; sx < VIEW_W; sx += 4) {
-      const wx = cx * 0.6 + sx + 300;
-      const ry = t.floorAt(wx) - 26 + Math.sin(wx * 0.021) * 7 + Math.sin(wx * 0.007) * 10;
-      const sy = Math.round(ry - cy);
-      if (sy >= VIEW_H) continue;
-      const base = this.waterCols[clamp(Math.floor((cx + sx) / 8), 0, this.waterCols.length - 1)] ?? P.blue;
-      ctx.fillStyle = mixHex(base, P.ink, 0.22);
-      ctx.fillRect(sx, Math.max(top, sy), 4, VIEW_H - Math.max(top, sy));
-    }
-    // Surface shimmer.
-    if (surf >= 0 && surf < VIEW_H) {
-      ctx.fillStyle = P.white;
-      for (let x = 0; x < VIEW_W; x += 3) {
-        const wy = Math.round(Math.sin((x + cx) * 0.15 + time * 2) * 0.8);
-        ctx.fillRect(x, surf + wy, 2, 1);
-      }
+      ctx.globalAlpha = 1;
     }
     // Spring vents bubble.
     this.ventTimer -= frameDt;
@@ -184,54 +322,124 @@ export class WorldRenderer {
     }
   }
 
-  private drawTerrain(ctx: CanvasRenderingContext2D, cx: number, cy: number): void {
-    const t = this.world.terrain;
-    const x0 = Math.floor(cx / COL_W) * COL_W;
-    for (let wx = x0; wx < cx + VIEW_W + COL_W; wx += COL_W) {
-      const fy = t.floorAt(wx);
-      const sy = Math.round(fy - cy);
-      if (sy >= VIEW_H) continue;
-      const z = t.zoneDef(t.zoneAt(wx, fy - 1));
-      const sx = wx - cx;
-      ctx.fillStyle = P[z.groundDark];
-      ctx.fillRect(sx, sy, COL_W, VIEW_H - sy);
-      // Deeper strata get darker, in hard retro bands.
-      const s1 = sy + 18 + (Math.floor(wx / 16) % 2);
-      if (s1 < VIEW_H) {
-        ctx.fillStyle = this.strata(z.groundDark, 1);
-        ctx.fillRect(sx, s1, COL_W, VIEW_H - s1);
-      }
-      const s2 = sy + 46 + (Math.floor(wx / 24) % 3);
-      if (s2 < VIEW_H) {
-        ctx.fillStyle = this.strata(z.groundDark, 2);
-        ctx.fillRect(sx, s2, COL_W, VIEW_H - s2);
-      }
-      ctx.fillStyle = P[z.ground];
-      ctx.fillRect(sx, sy, COL_W, 3);
-      const k = Math.floor(wx / COL_W);
-      for (let j = 0; j < 3; j++) {
-        if (hash(k * 7 + j) < 0.5) ctx.fillRect(sx + Math.floor(hash(k * 13 + j) * COL_W), sy + 4 + j * 3, 1, 1);
+  private drawSky(ctx: CanvasRenderingContext2D, cx: number, surf: number, time: number): void {
+    if (!this.sky) {
+      this.sky = makeSky(VIEW_W);
+      this.sun = makeSun();
+      this.clouds = makeClouds();
+    }
+    ctx.drawImage(this.sky, 0, surf - SKY_BAKE_H);
+    if (surf > SKY_BAKE_H) {
+      ctx.fillStyle = mixHex(P.sky, P.blue, 0.3);
+      ctx.fillRect(0, 0, VIEW_W, surf - SKY_BAKE_H);
+    }
+    if (this.sun) ctx.drawImage(this.sun, Math.round(252 - cx * 0.012) - 9, surf - 31);
+    for (let i = 0; i < 6; i++) {
+      const img = this.clouds[i % this.clouds.length];
+      if (!img) continue;
+      const x = Math.round(mod(hash(i + 50) * 1500 - cx * 0.12 + time * 1.5, 1500)) - 100;
+      const y = surf - img.height - 4 - Math.floor(hash(i + 9) * 14);
+      if (x > -img.width && x < VIEW_W && y + img.height < surf - 2) ctx.drawImage(img, x, y);
+    }
+    // Hazy far shore (hammock treeline) behind the spring run and estuary.
+    const body = mixHex(P.forest, P.sky, 0.5);
+    const lit = mixHex(P.moss, P.sky, 0.38);
+    for (let pass = 0; pass < 2; pass++) {
+      ctx.fillStyle = pass === 0 ? body : lit;
+      for (let sx = 0; sx < VIEW_W; sx += 2) {
+        const wx = cx + sx;
+        const fade = clamp((2500 - wx) / 300, 0, 1);
+        if (fade <= 0) continue;
+        const px = Math.floor((cx * 0.1 + sx) / 2);
+        const h = Math.round((3 + 3 * (vnoise(px / 5, 9) * 0.5 + 0.5) + 1.5 * vnoise(px / 1.7, 10)) * fade);
+        if (h <= 0) continue;
+        if (pass === 0) ctx.fillRect(sx, surf - h, 2, h);
+        else ctx.fillRect(sx, surf - h, 2, 1);
       }
     }
   }
 
-  private drawDecor(ctx: CanvasRenderingContext2D, cx: number, cy: number, time: number, front: boolean): void {
-    const lo = cx - 80;
-    const hi = cx + VIEW_W + 10;
-    // Binary search for the first prop in view.
-    let a = 0;
-    let b = this.decor.length;
-    while (a < b) {
-      const m = (a + b) >> 1;
-      if ((this.decor[m] as Decor).x < lo) a = m + 1;
-      else b = m;
+  /** Live grass: eelgrass ribbons and turtle-grass blades swaying in segments. */
+  private drawGrass(ctx: CanvasRenderingContext2D, cx: number, cy: number, time: number, front: boolean): void {
+    const lo = cx - 6;
+    const hi = cx + VIEW_W + 6;
+    const a = lowerBound(this.blades, lo);
+    for (let pass = 0; pass < 4; pass++) {
+      let style = '';
+      for (let i = a; i < this.blades.length; i++) {
+        const b = this.blades[i] as Blade;
+        if (b.x > hi) break;
+        if (b.front !== front) continue;
+        const sy = b.base - cy;
+        if (sy - b.h > VIEW_H || sy < 0) continue;
+        const set = BLADE_SETS[b.set] ?? BLADE_SETS[0]!;
+        const c = set[pass] ?? P.forest;
+        if (c !== style) {
+          ctx.fillStyle = c;
+          style = c;
+        }
+        const sway = Math.sin(time * 1.6 + b.phase) * b.amp;
+        const sx = b.x - cx;
+        const bw = b.wide ? 2 : 1;
+        if (pass === 3) {
+          const off = Math.round(sway);
+          ctx.fillRect(sx + off, sy - b.h, 1, 1);
+          continue;
+        }
+        // Segment k of 4 (0 = base); pass 0 draws seg 0, pass 1 segs 1-2, pass 2 seg 3 / the lit edge.
+        const k0 = pass === 0 ? 0 : pass === 1 ? 1 : 3;
+        const k1 = pass === 1 ? 2 : k0;
+        for (let k = k0; k <= k1; k++) {
+          const ya = Math.round(sy - (b.h * (k + 1)) / 4);
+          const yb = Math.round(sy - (b.h * k) / 4);
+          const off = Math.round(sway * ((k + 0.5) / 4) ** 1.5);
+          ctx.fillRect(sx + off, ya, bw, yb - ya);
+        }
+        if (pass === 2 && b.wide) {
+          // Lit left edge along the middle of turtle-grass blades.
+          const ya = Math.round(sy - (b.h * 3) / 4);
+          const yb = Math.round(sy - b.h / 4);
+          ctx.fillRect(sx + Math.round(sway * 0.3), ya, 1, yb - ya);
+        }
+      }
     }
-    for (let i = a; i < this.decor.length; i++) {
-      const d = this.decor[i] as Decor;
-      if (d.x > hi) break;
-      const isFront = d.type === 'grass' ? d.variant === 2 : d.type === 'mangrove';
-      if (isFront !== front) continue;
-      drawProp(ctx, d, d.x - cx, d.y - cy, time);
+  }
+
+  /** Dancing caustic light on the sunlit sand. */
+  private drawCaustics(ctx: CanvasRenderingContext2D, cx: number, cy: number, time: number): void {
+    if (cy > 120) return;
+    ctx.fillStyle = 'rgba(244,244,244,0.26)';
+    for (let sx = 0; sx < VIEW_W; sx += 2) {
+      const wx = cx + sx;
+      const f = this.env.F(wx);
+      if (f > 240) continue;
+      const sy = f - cy;
+      if (sy < 0 || sy >= VIEW_H) continue;
+      const murky = wx > 1200 && wx < 2400;
+      const thr = murky ? 1.75 : 1.3;
+      for (let k = 0; k < 6; k += 2) {
+        const y = f + k;
+        const v = Math.sin(wx * 0.19 + time * 1.3 + Math.sin(y * 0.5 + time * 0.6 + wx * 0.05) * 1.8) + Math.sin(wx * 0.083 - time * 0.9 + k * 0.7);
+        if (v > thr + k * 0.08) ctx.fillRect(sx, sy + k, 2, 1);
+      }
+    }
+  }
+
+  /** The water surface seen from below: highlight line, wave crests, glints. */
+  private drawSurface(ctx: CanvasRenderingContext2D, cx: number, cy: number, time: number): void {
+    const surf = -cy;
+    if (surf < -2 || surf >= VIEW_H) return;
+    ctx.fillStyle = 'rgba(244,244,244,0.3)';
+    ctx.fillRect(0, surf, VIEW_W, 1);
+    ctx.fillStyle = 'rgba(244,244,244,0.1)';
+    ctx.fillRect(0, surf + 1, VIEW_W, 2);
+    ctx.fillStyle = P.white;
+    const x0 = Math.floor(cx / 3) * 3;
+    for (let wx = x0; wx < cx + VIEW_W; wx += 3) {
+      const v = Math.sin(wx * 0.13 + time * 2.1) + 0.6 * Math.sin(wx * 0.31 - time * 1.4);
+      if (v > 0.85) ctx.fillRect(wx - cx, surf - 1, 3, 1);
+      else if (v > 0.2) ctx.fillRect(wx - cx, surf, 2, 1);
+      else if (v < -1.25) ctx.fillRect(wx - cx + 1, surf + 2, 1, 1);
     }
   }
 
@@ -387,130 +595,16 @@ export class WorldRenderer {
       }
     }
   }
-
-  private readonly strataCache = new Map<string, string>();
-
-  private strata(key: keyof typeof P, level: number): string {
-    const k = `${key}:${level}`;
-    let c = this.strataCache.get(k);
-    if (!c) {
-      c = mixHex(P[key], P.ink, level * 0.16);
-      this.strataCache.set(k, c);
-    }
-    return c;
-  }
-
 }
 
-// ---- props ---------------------------------------------------------------
-
-function drawProp(ctx: CanvasRenderingContext2D, d: Decor, sx: number, sy: number, time: number): void {
-  switch (d.type) {
-    case 'rock': {
-      const shades = [P.slate, P.grey, P.darkgrey] as const;
-      ctx.fillStyle = shades[d.variant % 3] ?? P.slate;
-      for (let y = 0; y < d.h; y++) {
-        const t = y / d.h;
-        const w = Math.round(d.w * Math.sqrt(1 - (1 - t) * (1 - t)));
-        ctx.fillRect(sx + Math.round((d.w - w) / 2), sy - d.h + y, w, 1);
-      }
-      ctx.fillStyle = P.silver;
-      ctx.fillRect(sx + Math.round(d.w * 0.35), sy - d.h + 1, Math.max(1, Math.round(d.w * 0.25)), 1);
-      break;
-    }
-    case 'vent': {
-      ctx.fillStyle = P.cream;
-      ctx.fillRect(sx, sy - 2, d.w, 2);
-      ctx.fillRect(sx + 2, sy - 4, d.w - 4, 2);
-      ctx.fillStyle = P.tan;
-      ctx.fillRect(sx + 5, sy - 4, 2, 2);
-      break;
-    }
-    case 'grass': {
-      const sway = Math.round(Math.sin(time * 1.6 + d.x * 0.3) * 1.5);
-      ctx.fillStyle = d.variant === 1 ? P.forest : d.variant === 2 ? P.moss : P.seafoam;
-      const half = Math.floor(d.h / 2);
-      ctx.fillRect(sx, sy - half, 1, half);
-      ctx.fillRect(sx + sway, sy - d.h, 1, d.h - half);
-      break;
-    }
-    case 'log': {
-      ctx.fillStyle = P.bark;
-      ctx.fillRect(sx, sy - d.h, d.w, d.h);
-      ctx.fillStyle = P.brown;
-      ctx.fillRect(sx, sy - d.h, d.w, 2);
-      ctx.fillStyle = P.moss;
-      for (let i = 0; i < d.w; i += 5) ctx.fillRect(sx + i, sy - d.h - 1, 2, 1);
-      break;
-    }
-    case 'mangrove': {
-      // d.y is the canopy top in world space (above the surface); sy is its screen y.
-      const trunkX = sx + Math.floor(d.w / 2);
-      const surf = sy - d.y; // screen y of the water surface
-      ctx.fillStyle = P.forest;
-      ctx.fillRect(sx - 6, sy + 4, d.w + 12, 10);
-      ctx.fillStyle = P.moss;
-      ctx.fillRect(sx - 2, sy, d.w + 4, 6);
-      ctx.fillStyle = P.seafoam;
-      for (let i = 0; i < d.w + 8; i += 6) ctx.fillRect(sx - 4 + i, sy + ((i / 6) % 2), 3, 1);
-      ctx.fillStyle = P.bark;
-      ctx.fillRect(trunkX - 2, sy + 12, 4, surf - sy - 10);
-      // Prop roots arch from the trunk down into the mud.
-      const bottom = sy + d.h;
-      const len = bottom - surf;
-      const n = 6;
-      for (let i = 0; i < n; i++) {
-        const bx = sx + Math.round((i / (n - 1)) * (d.w - 1));
-        for (let k = 0; k <= len; k++) {
-          const y = surf + k;
-          if (y < 0 || y >= VIEW_H) continue;
-          const t = k / len;
-          ctx.fillRect(Math.round(trunkX + (bx - trunkX) * Math.sin(t * Math.PI * 0.5)), y, 1, 1);
-        }
-      }
-      break;
-    }
-    case 'brainCoral': {
-      const c = d.variant === 0 ? P.yellow : d.variant === 1 ? P.tan : P.olive;
-      for (let y = 0; y < d.h; y++) {
-        const t = 1 - y / d.h;
-        const w = Math.round(d.w * Math.sqrt(1 - t * t));
-        ctx.fillStyle = c;
-        ctx.fillRect(sx + Math.round((d.w - w) / 2), sy - y - 1, w, 1);
-        if (y % 2 === 0 && w > 4) {
-          ctx.fillStyle = P.brown;
-          ctx.fillRect(sx + Math.round((d.w - w) / 2) + 1 + (y % 4), sy - y - 1, Math.max(1, w - 4), 1);
-        }
-      }
-      break;
-    }
-    case 'elkhorn': {
-      const c = d.variant === 1 ? P.rust : P.orange;
-      ctx.fillStyle = c;
-      const mid = sx + Math.floor(d.w / 2);
-      ctx.fillRect(mid - 1, sy - d.h, 3, d.h);
-      for (let k = 0; k < 3; k++) {
-        const by = sy - Math.round(d.h * (0.35 + k * 0.2));
-        const len = Math.round(d.w / 2 - k * 2);
-        const dir = k % 2 === 0 ? -1 : 1;
-        for (let i = 0; i < len; i++) ctx.fillRect(mid + dir * i, by - Math.floor(i / 2), 2, 2);
-      }
-      ctx.fillStyle = P.yellow;
-      ctx.fillRect(mid, sy - d.h, 1, 1);
-      break;
-    }
-    case 'seaFan': {
-      ctx.fillStyle = d.variant === 1 ? P.violet : P.magenta;
-      const mid = sx + Math.floor(d.w / 2);
-      ctx.fillRect(mid, sy - 3, 1, 3);
-      for (let y = 3; y < d.h; y++) {
-        const t = y / d.h;
-        const w = Math.round(d.w * Math.sin(t * Math.PI * 0.85));
-        for (let x = 0; x < w; x++) {
-          if ((x + y) % 2 === 0) ctx.fillRect(mid - Math.floor(w / 2) + x, sy - y, 1, 1);
-        }
-      }
-      break;
-    }
+/** First index whose x >= v in a list sorted by x. */
+function lowerBound(list: readonly { x: number }[], v: number): number {
+  let a = 0;
+  let b = list.length;
+  while (a < b) {
+    const m = (a + b) >> 1;
+    if ((list[m] as { x: number }).x < v) a = m + 1;
+    else b = m;
   }
+  return a;
 }
