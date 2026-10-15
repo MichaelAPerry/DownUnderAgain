@@ -32,7 +32,7 @@ export const shopScreen: ScreenView = (app) => {
             app.sfx('upgrade');
             render();
           } else app.sfx('warn');
-        }, { small: true, primary: !maxed && s.biomass >= cost, disabled: maxed || s.biomass < cost }),
+        }, { small: true, primary: !maxed && s.biomass >= cost, disabled: maxed || s.biomass < cost, sfx: 'none' }),
       );
     });
     root.replaceChildren(

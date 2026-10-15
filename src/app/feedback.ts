@@ -1,6 +1,6 @@
 /** Turns session feedback events into particles and sound effects. */
 import { PALETTE as P } from '../data/palette';
-import type { Sfx } from '../engine/audio';
+import type { Sfx } from '../audio/sfx';
 import type { FeedbackEvent } from '../modes/session';
 import type { WorldRenderer } from '../render/worldRenderer';
 

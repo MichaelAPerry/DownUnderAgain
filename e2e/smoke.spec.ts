@@ -14,6 +14,9 @@ const test = base.extend<{ problems: string[] }>({
     await page.addInitScript(() => localStorage.clear());
     await page.goto('/');
     await page.waitForFunction(() => (window as any).__game?.screen === 'title');
+    // Pass the "press any key" gate (it also unlocks audio).
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('button', { name: 'PLAY', exact: true })).toBeVisible();
     await use(problems);
     expect(problems).toEqual([]);
   },
@@ -39,7 +42,7 @@ async function dive(page: Page): Promise<void> {
 
 test('title loads', async ({ page, problems }) => {
   void problems;
-  await expect(page.getByRole('heading', { name: 'DOWN UNDER' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'PLAY', exact: true })).toBeVisible();
   await expect(page.locator('#view')).toBeVisible();
 });
 
@@ -61,7 +64,7 @@ test('free swim flow with pause and quit', async ({ page, problems }) => {
   await waitScreen(page, 'playing');
   await page.keyboard.press('Escape');
   await btn(page, 'QUIT TO TITLE').click();
-  await expect(page.getByRole('heading', { name: 'DOWN UNDER' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'PLAY', exact: true })).toBeVisible();
 });
 
 test('Enter on a species card opens the briefing and stops there', async ({ page, problems }) => {
@@ -164,5 +167,40 @@ test('codex and help screens', async ({ page, problems }) => {
   await btn(page, 'HOW TO PLAY').click();
   await expect(page.getByText('CONTROLS', { exact: true })).toBeVisible();
   await btn(page, '< BACK').click();
-  await expect(page.getByRole('heading', { name: 'DOWN UNDER' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'PLAY', exact: true })).toBeVisible();
+});
+
+test.describe('title gate and audio', () => {
+  test('press any key unlocks audio and starts the title music', async ({ page }) => {
+    const problems: string[] = [];
+    page.on('pageerror', (err) => problems.push(`pageerror: ${err.message}`));
+    page.on('console', (msg) => {
+      if (msg.type() === 'error' || msg.type() === 'warning') problems.push(`console.${msg.type()}: ${msg.text()}`);
+    });
+    await page.addInitScript(() => {
+      localStorage.clear();
+      (window as any).__oscillators = 0;
+      const orig = AudioContext.prototype.createOscillator;
+      AudioContext.prototype.createOscillator = function (this: AudioContext) {
+        (window as any).__oscillators++;
+        return orig.call(this);
+      };
+    });
+    await page.goto('/');
+    await page.waitForFunction(() => (window as any).__game?.screen === 'title');
+    // Before the gate: no menu, no sound.
+    await expect(page.getByRole('button', { name: 'PLAY', exact: true })).toHaveCount(0);
+    expect(await page.evaluate(() => (window as any).__oscillators)).toBe(0);
+    await page.getByRole('button', { name: 'Start the game' }).click();
+    await expect(page.getByRole('button', { name: 'PLAY', exact: true })).toBeVisible();
+    // Music keeps scheduling new notes once started (independent of the song's density).
+    await expect.poll(() => page.evaluate(() => (window as any).__game.audio.currentSongId)).toBe('title');
+    const before = await page.evaluate(() => (window as any).__oscillators);
+    await page.waitForTimeout(3000);
+    expect(await page.evaluate(() => (window as any).__oscillators)).toBeGreaterThan(before + 2);
+    // Muting from the title stops new sound.
+    await page.getByRole('button', { name: 'SOUND: ON' }).click();
+    await expect(page.getByRole('button', { name: 'SOUND: OFF' })).toBeVisible();
+    expect(problems).toEqual([]);
+  });
 });

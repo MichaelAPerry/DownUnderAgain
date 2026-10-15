@@ -69,7 +69,10 @@ export const briefingScreen: ScreenView = (app) => {
     // Buttons handle Enter natively; reacting here too would double-fire (or
     // dive straight through from the card that opened this screen).
     if (e.target instanceof HTMLButtonElement || e.target instanceof HTMLInputElement) return;
-    if (e.key === 'Enter' && !e.repeat) begin();
+    if (e.key === 'Enter' && !e.repeat) {
+      app.sfx('confirm');
+      begin();
+    }
   };
   document.addEventListener('keydown', onKey);
   return el;

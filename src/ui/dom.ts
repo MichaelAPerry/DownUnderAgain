@@ -30,11 +30,17 @@ export function h<K extends keyof HTMLElementTagNameMap>(tag: K, props: Props = 
 }
 
 /** A retro button. `primary` buttons get the gold treatment. */
-export function button(label: string, onClick: () => void, opts: { primary?: boolean; small?: boolean; disabled?: boolean; title?: string } = {}): HTMLButtonElement {
+export function button(
+  label: string,
+  onClick: () => void,
+  opts: { primary?: boolean; small?: boolean; disabled?: boolean; title?: string; sfx?: string } = {},
+): HTMLButtonElement {
   const cls = ['btn', opts.primary ? 'btn-primary' : '', opts.small ? 'btn-small' : ''].filter(Boolean).join(' ');
   const b = h('button', { class: cls, text: label, attrs: { type: 'button' }, onClick: () => onClick() });
   if (opts.disabled) b.disabled = true;
   if (opts.title) b.title = opts.title;
+  // UI click sound override (see Game.wireUiSounds); 'none' = the action plays its own.
+  if (opts.sfx) b.dataset.sfx = opts.sfx;
   return b;
 }
 

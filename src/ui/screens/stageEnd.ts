@@ -35,10 +35,7 @@ export const stageEndScreen: ScreenView = (app) => {
         h(
           'div',
           { class: 'mt-3' },
-          button('NEXT FISH', () => {
-            app.sfx('confirm');
-            app.next();
-          }, { primary: true }),
+          button('NEXT FISH', () => app.next(), { primary: true }),
         ),
       ),
       quit,
@@ -58,10 +55,7 @@ export const stageEndScreen: ScreenView = (app) => {
         'div',
         { class: 'mt-3 flex gap-3 flex-wrap justify-center' },
         session.canRetry
-          ? button('TRY AGAIN', () => {
-              app.sfx('confirm');
-              app.retry();
-            }, { primary: true })
+          ? button('TRY AGAIN', () => app.retry(), { primary: true })
           : null,
         button('GIVE UP', () => app.go('results')),
       ),
