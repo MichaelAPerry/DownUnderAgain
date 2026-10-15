@@ -11,7 +11,9 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.e2e.json",
     "test": "vitest run",
     "check": "npm run typecheck && vitest run",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "sprites": "vitest run --config tools/vitest.tools.config.ts",
+    "screenshots": "node tools/screenshots.mjs"
   },
   "license": "MIT",
   "devDependencies": {
