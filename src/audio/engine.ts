@@ -320,6 +320,36 @@ export class AudioEngine {
     }
   }
 
+  // ---- offline rendering (dev tooling) -----------------------------------
+
+  /**
+   * Render a song through the same synth graph into an AudioBuffer, faster
+   * than real time. Used by `npm run music` to export previews and check
+   * levels; not used during play.
+   */
+  static async renderOffline(song: Song, loops = 1, tail = 2): Promise<AudioBuffer> {
+    const c = compileSong(song);
+    const seconds = c.totalSteps * c.stepSeconds * loops + tail;
+    const ctx = new OfflineAudioContext(2, Math.ceil(seconds * 44100), 44100);
+    const eng = new AudioEngine();
+    eng.ctx = ctx as unknown as AudioContext;
+    eng.build(ctx as unknown as AudioContext);
+    const out = ctx.createGain();
+    out.connect(eng.musicFilter);
+    for (let l = 0; l < loops; l++) {
+      for (let step = 0; step < c.totalSteps; step++) {
+        const t = 0.05 + (l * c.totalSteps + step) * c.stepSeconds;
+        for (const tr of c.tracks) {
+          for (const ev of tr.byStep.get(step) ?? []) {
+            if (isDrumKit(tr.instrument)) eng.drum(ev.note as DrumHit, t, tr.instrument.volume, out);
+            else eng.note(ev.note as number, ev.length * c.stepSeconds, t, tr.instrument, out);
+          }
+        }
+      }
+    }
+    return ctx.startRendering();
+  }
+
   // ---- setup -------------------------------------------------------------
 
   private build(ctx: AudioContext): void {
