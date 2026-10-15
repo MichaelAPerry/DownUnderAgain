@@ -26,8 +26,13 @@ export const pausedScreen: ScreenView = (app) => {
       mute,
       music,
       cues,
-      button('QUIT TO TITLE', () => app.quit()),
+      app.lan.role === 'host' && !app.lan.host?.isFull ? button('INVITE A FRIEND', () => app.go('lanHost')) : null,
+      button(
+        app.lan.role === 'host' ? 'END GAME FOR EVERYONE' : app.lan.role === 'guest' ? 'LEAVE GAME' : 'QUIT TO TITLE',
+        () => app.quit(),
+      ),
     ),
+    app.lan.role !== 'none' ? h('p', { class: 'muted text-[8px] text-center mt-3', text: 'THE REEF KEEPS GOING WHILE YOU ARE PAUSED' }) : null,
     h('p', { class: 'muted text-[8px] text-center mt-4', text: 'ESC TO RESUME' }),
   );
 };

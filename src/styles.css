@@ -1,5 +1,5 @@
 @import "tailwindcss";
-@import "@fontsource/press-start-2p/400.css";
+@import "@fontsource/press-start-2p/latin-400.css";
 
 @theme {
   --font-pixel: "Press Start 2P", ui-monospace, monospace;
@@ -119,6 +119,241 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .menu-in {
+    animation: none;
+  }
+}
+
+/* ---- Mobile page behaviour -------------------------------------------- */
+html,
+body {
+  overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+#app {
+  /* No double-tap zoom anywhere; menus still scroll. */
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+#app input,
+#app textarea {
+  -webkit-user-select: text;
+  user-select: text;
+}
+#view {
+  touch-action: none;
+}
+/* While swimming the whole game area belongs to the controls: no pan, pinch or bounce. */
+html.is-playing,
+html.is-playing body,
+html.is-playing #app {
+  touch-action: none;
+}
+
+/* ---- Touch controls (ui/touch) --------------------------------------- */
+.touch-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  pointer-events: none;
+  overflow: hidden;
+}
+.touch-layer[hidden],
+.touch-layer [hidden] {
+  display: none !important;
+}
+
+.touch-stick {
+  position: absolute;
+  left: 0;
+  top: 0;
+  visibility: hidden;
+  will-change: transform;
+}
+.touch-stick.on {
+  visibility: visible;
+}
+.touch-stick canvas {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: block;
+}
+.touch-stick-base {
+  opacity: 0.9;
+}
+
+.touch-pad {
+  position: absolute;
+  right: calc(env(safe-area-inset-right, 0px) + 14px);
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 14px);
+  display: grid;
+  grid-template-columns: auto auto;
+  grid-template-areas:
+    ". pause"
+    "evolve burst";
+  column-gap: 12px;
+  row-gap: 18px;
+  align-items: end;
+  justify-items: end;
+}
+.touch-btn {
+  pointer-events: auto;
+  touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0;
+  font-family: var(--font-pixel);
+  font-size: 8px;
+  line-height: 1;
+  color: var(--color-cream);
+  background: rgb(51 60 87 / 0.78);
+  border: 0;
+  /* Pixel bevel like the menu buttons: silver rim, slate light edge, ink shadow edge, 2px pixel-rounded corners. */
+  box-shadow:
+    inset 0 0 0 2px var(--color-silver),
+    inset 4px 4px 0 0 var(--color-slate),
+    inset -4px -4px 0 0 var(--color-ink);
+  clip-path: polygon(
+    2px 0, calc(100% - 2px) 0, calc(100% - 2px) 2px, 100% 2px, 100% calc(100% - 2px), calc(100% - 2px) calc(100% - 2px),
+    calc(100% - 2px) 100%, 2px 100%, 2px calc(100% - 2px), 0 calc(100% - 2px), 0 2px, 2px 2px
+  );
+  text-shadow: 1px 1px 0 var(--color-ink);
+  cursor: pointer;
+}
+.touch-btn:focus {
+  outline: none;
+}
+.touch-btn.is-down {
+  background: var(--color-gold);
+  color: var(--color-ink);
+  text-shadow: none;
+  box-shadow:
+    inset 0 0 0 2px var(--color-yellow),
+    inset 4px 4px 0 0 #a05b2c,
+    inset -2px -2px 0 2px var(--color-yellow);
+}
+.touch-burst {
+  grid-area: burst;
+  width: 84px;
+  height: 84px;
+  font-size: 9px;
+}
+.touch-burst-icon {
+  font-size: 14px;
+  color: var(--color-yellow);
+}
+.touch-burst.is-down .touch-burst-icon {
+  color: var(--color-ink);
+}
+.touch-pause {
+  grid-area: pause;
+  width: 52px;
+  height: 52px;
+  flex-direction: row;
+  gap: 6px;
+}
+.touch-pause-bar {
+  display: block;
+  width: 6px;
+  height: 18px;
+  background: var(--color-cream);
+  box-shadow: 2px 2px 0 0 var(--color-ink);
+}
+.touch-pause.is-down .touch-pause-bar {
+  background: var(--color-ink);
+  box-shadow: none;
+}
+.touch-evolve {
+  grid-area: evolve;
+  width: 76px;
+  height: 56px;
+  color: var(--color-silver);
+}
+.touch-evolve.can-evolve {
+  color: var(--color-ink);
+  text-shadow: none;
+  background: var(--color-cyan);
+  box-shadow:
+    inset 0 0 0 2px var(--color-white),
+    inset 4px 4px 0 0 var(--color-white),
+    inset -4px -4px 0 0 var(--color-teal);
+  animation: touch-evolve-pulse 0.66s steps(1, end) infinite;
+}
+@keyframes touch-evolve-pulse {
+  50% {
+    background: var(--color-teal);
+    color: var(--color-cream);
+    box-shadow:
+      inset 0 0 0 2px var(--color-cyan),
+      inset 4px 4px 0 0 var(--color-cyan),
+      inset -4px -4px 0 0 var(--color-ink);
+  }
+}
+@media (max-height: 340px) {
+  .touch-burst {
+    width: 72px;
+    height: 72px;
+  }
+  .touch-pad {
+    row-gap: 12px;
+  }
+}
+
+/* Portrait hint: small, top-centre, never blocks play (only the strip itself takes taps). */
+.touch-rotate {
+  pointer-events: auto;
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 12px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  max-width: calc(100% - 24px);
+  padding: 8px 12px;
+  font-family: var(--font-pixel);
+  font-size: 8px;
+  line-height: 1.5;
+  text-align: left;
+  color: var(--color-cream);
+  background: rgb(26 28 64 / 0.9);
+  border: 2px solid var(--color-ink);
+  box-shadow: inset 0 0 0 2px var(--color-slate), 4px 4px 0 0 var(--color-ink);
+  cursor: pointer;
+}
+.touch-rotate-icon {
+  flex: none;
+  width: 12px;
+  height: 20px;
+  border: 2px solid var(--color-cyan);
+  box-shadow: 2px 2px 0 0 var(--color-ink);
+  animation: touch-rotate-tilt 2.4s steps(1, end) infinite;
+}
+@keyframes touch-rotate-tilt {
+  50% {
+    width: 20px;
+    height: 12px;
+  }
+}
+.touch-rotate-x {
+  flex: none;
+  color: var(--color-yellow);
+  padding-left: 4px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .touch-evolve.can-evolve,
+  .touch-rotate-icon {
     animation: none;
   }
 }

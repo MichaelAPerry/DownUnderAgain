@@ -15,6 +15,15 @@ export const modeSelectScreen: ScreenView = (app) => {
       h('span', { class: 'muted text-[8px]', text: best !== undefined ? `BEST: ${best}` : 'BEST: ---' }),
     );
   });
+  cards.push(
+    h(
+      'button',
+      { class: 'card-button flex flex-col gap-2', attrs: { type: 'button' }, onClick: () => app.go('lanMenu') },
+      h('span', { class: 'text-cyan text-[11px]', text: 'LAN REEF' }),
+      h('span', { class: 'leading-relaxed', text: 'Swim with friends on the same Wi-Fi. Watch out: they can eat you too!' }),
+      h('span', { class: 'muted text-[8px]', text: '2-6 PLAYERS' }),
+    ),
+  );
   return panel(
     'CHOOSE A MODE',
     h('div', { class: 'grid grid-cols-1 sm:grid-cols-2 gap-3' }, ...cards),

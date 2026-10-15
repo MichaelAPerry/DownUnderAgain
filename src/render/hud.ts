@@ -3,7 +3,9 @@ import { PALETTE } from '../data/palette';
 import { VIEW_H, VIEW_W } from '../engine/camera';
 import type { Camera } from '../engine/camera';
 import { clamp } from '../engine/math';
-import type { GameSession } from '../modes/session';
+import type { Outcome, Toast } from '../modes/session';
+import type { UpgradeDef } from '../data/schema';
+import type { World } from '../sim/world';
 import { STAGE_TIME } from '../modes/session';
 import { canEat } from '../sim/foodWeb';
 import { PARASITE_DANGER, stressAt } from '../sim/systems/metabolism';
@@ -26,7 +28,40 @@ function bar(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, fra
   ctx.fillRect(x, y, Math.round(w * clamp(frac, 0, 1)), 1);
 }
 
-export function drawHud(ctx: CanvasRenderingContext2D, s: GameSession, cam: Camera, time: number): void {
+/**
+ * Everything the HUD reads. A single-player GameSession satisfies it as-is;
+ * LAN play passes a small adapter.
+ */
+export interface HudModel {
+  readonly player: Entity;
+  readonly world: World;
+  readonly score: number;
+  readonly toasts: readonly Toast[];
+  readonly outcome: Outcome;
+  readonly cause: string | null;
+  readonly mode: { readonly id: string; readonly usesEvolution: boolean; readonly staged: boolean };
+  readonly biomass: number;
+  readonly upgrades: readonly UpgradeDef[];
+  readonly levels: Readonly<Record<string, number>>;
+  readonly lives: number;
+  readonly stage: number;
+  readonly stages: number;
+  readonly stageProgress: number;
+  readonly stageTime: number;
+}
+
+/** Evolution mode: can the player afford at least one more upgrade right now? */
+export function canEvolve(s: HudModel): boolean {
+  const costs = s.upgrades.filter((u) => (s.levels[u.id] ?? 0) < u.maxLevel).map((u) => upgradeCost(u, s.levels[u.id] ?? 0));
+  return costs.length > 0 && s.biomass >= Math.min(...costs);
+}
+
+export interface HudOptions {
+  /** On-screen touch controls are showing: word hints for taps, not keys. */
+  touch?: boolean;
+}
+
+export function drawHud(ctx: CanvasRenderingContext2D, s: HudModel, cam: Camera, time: number, opts: HudOptions = {}): void {
   const p = s.player;
   const blink = Math.floor(time * 3) % 2 === 0;
   const sh = { shadow: P.ink };
@@ -47,10 +82,7 @@ export function drawHud(ctx: CanvasRenderingContext2D, s: GameSession, cam: Came
   drawText(ctx, `SCORE ${String(s.score).padStart(6, '0')}`, VIEW_W - 4, 4, P.yellow, { align: 'right', shadow: P.ink });
   if (s.mode.usesEvolution) {
     drawText(ctx, `BIO ${s.biomass}`, VIEW_W - 4, 13, P.lime, { align: 'right', shadow: P.ink });
-    const cheapest = Math.min(
-      ...s.upgrades.filter((u) => (s.levels[u.id] ?? 0) < u.maxLevel).map((u) => upgradeCost(u, s.levels[u.id] ?? 0)),
-    );
-    if (s.biomass >= cheapest && blink) drawText(ctx, 'TAB: EVOLVE!', VIEW_W - 4, 22, P.cyan, { align: 'right', shadow: P.ink });
+    if (canEvolve(s) && blink) drawText(ctx, opts.touch ? 'TAP EVOLVE!' : 'TAB: EVOLVE!', VIEW_W - 4, 22, P.cyan, { align: 'right', shadow: P.ink });
   }
   if (s.mode.staged) {
     const label = `STAGE ${s.stage + 1}/${s.stages}`;
@@ -88,7 +120,8 @@ export function drawHud(ctx: CanvasRenderingContext2D, s: GameSession, cam: Came
     const sy = o.y - cy;
     if (sx >= 0 && sx < VIEW_W && sy >= 0 && sy < VIEW_H) continue;
     const ax = clamp(sx, 6, VIEW_W - 10);
-    const ay = clamp(sy, 44, VIEW_H - 22);
+    // With touch controls up, right-edge arrows stay above the BURST/PAUSE cluster.
+    const ay = clamp(sy, 44, VIEW_H - (opts.touch && ax > VIEW_W - 60 ? 70 : 22));
     const glyph = sx < 0 ? '<' : sx >= VIEW_W ? '>' : sy < 0 ? '▲' : '▼';
     if (blink) drawText(ctx, glyph, ax, ay, P.red, { shadow: P.ink });
   }

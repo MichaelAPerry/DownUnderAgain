@@ -4,7 +4,7 @@
 
 **A retro pixel-art survival game about life in Florida's waters, from freshwater spring to deep sea.**
 
-[**▶ Play in your browser**](https://michaelaperry.github.io/DownUnderAgain/)
+[**▶ Play in your browser**](https://michaelaperry.github.io/DownUnderAgain/) · [**⬇ Download the single-file edition**](https://michaelaperry.github.io/DownUnderAgain/down-under-again.html)
 
 [![Build and deploy](https://github.com/MichaelAPerry/DownUnderAgain/actions/workflows/pages.yml/badge.svg)](https://github.com/MichaelAPerry/DownUnderAgain/actions/workflows/pages.yml)
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6)
@@ -50,6 +50,9 @@ Spring Run ─► Mangrove Estuary ─► Seagrass Flats ─► Florida Keys Ree
   - **Cover.** Small fish hide in seagrass, mangrove roots and reef crevices.
   - **Parasites.** Visit a cleaner goby, or rub on the sand to scrape them off.
   - **Invasive lionfish.** Venomous, spreading, and worth double points.
+- **LAN multiplayer.** Up to 6 players on the same Wi-Fi share one reef, with the food web applying between players. Pairing works by swapping an invite code and a reply code (QR or copy/paste), with no server, accounts or internet connection needed.
+- **Plays on phones and tablets** with a floating thumb-stick and on-screen buttons, as well as keyboard and mouse.
+- **Single-file edition.** The whole game is one HTML file that runs offline from a USB stick or any folder.
 - **Four modes:**
   - **Free Swim**: pick any fish and survive.
   - **Evolution**: eat to earn Biomass, then mutate mid-run with Power Fins, Big Jaw, Camouflage, Spike Spines and more.
@@ -71,13 +74,25 @@ Spring Run ─► Mangrove Estuary ─► Seagrass Flats ─► Florida Keys Ree
 | **C** | Toggle food-web cues |
 | **M** | Mute |
 
+**Touch:** drag anywhere on the left side of the screen to swim (the further you drag, the faster you go). Hold **BURST** to sprint; tap **II** to pause and **EVOLVE** to mutate in Evolution mode.
+
 **Tips**
 - Bite mouth-first. Approaching from behind a predator is safe.
 - Keep an eye on the bottom-left readout: zone, depth and salinity.
 - When the parasite meter climbs, find a cleaner goby on the reef or rest on the sand.
 - Small and hungry? Stay near cover until you're bigger.
 
-The game runs in any modern desktop browser. Progress (Codex discoveries, best scores, your custom fish) is saved locally in the browser.
+The game runs in any modern browser on desktop, phone or tablet. Progress (Codex discoveries, best scores, your custom fish) is saved locally in the browser.
+
+## LAN multiplayer
+
+1. Everyone opens the game on the **same Wi-Fi** and chooses **PLAY → LAN REEF**.
+2. The host picks **HOST A REEF**, chooses a fish and taps **INVITE A FRIEND**.
+3. The friend picks **JOIN A REEF**, chooses a fish and scans the host's QR code (or pastes the invite).
+4. The friend's screen shows a **reply** code. The host scans or pastes it and taps **CONNECT**.
+5. Repeat for up to 6 players, then the host taps **START REEF**.
+
+Players can eat each other wherever the food web allows (a barracuda can eat a bluegill), and eating another player scores triple. When you're eaten, pick a new fish and dive straight back in. The host's device runs the reef, so keep its screen on. Some guest or public Wi-Fi networks block devices from reaching each other; if connecting fails, try a home network or a phone hotspot.
 
 ## Development
 
@@ -89,6 +104,7 @@ npm run dev          # local dev server at http://localhost:5173
 npm run check        # strict typecheck + unit tests
 npm run e2e          # Playwright browser smoke tests
 npm run build        # production build into dist/
+npm run build:single # one self-contained offline HTML file in dist-single/
 ```
 
 Art tools:
@@ -96,6 +112,7 @@ Art tools:
 ```bash
 npm run sprites      # render every creature sprite to docs/art/sprites.png
 npm run screenshots  # capture each zone to docs/screenshots/ (needs `npm run dev -- --port 5181`)
+npm run music        # render the soundtrack to WAV and report levels (same dev server)
 ```
 
 The game is written in TypeScript (strict) with Vite, Canvas 2D and Tailwind CSS,

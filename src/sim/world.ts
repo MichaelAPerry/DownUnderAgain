@@ -17,6 +17,7 @@ import { metabolize } from './systems/metabolism';
 import { Spawner } from './systems/spawner';
 
 export const SIM_DT = 1 / 60;
+const IDLE_INPUT: Readonly<PlayerInput> = Object.freeze({ x: 0, y: 0, burst: false });
 const MAX_ENTITIES = 900;
 
 export interface SpawnOptions {
@@ -34,8 +35,12 @@ export class World {
   readonly entities: Entity[] = [];
   readonly hash = new SpatialHash<Entity>(64);
   readonly spawner: Spawner;
+  /** The local player's input (written by the app each frame). */
   readonly input: PlayerInput = { x: 0, y: 0, burst: false };
+  /** The local player (null on a network client or in attract mode). */
   player: Entity | null = null;
+  /** Input per player entity id: the local player plus any network players. */
+  private readonly inputs = new Map<number, PlayerInput>();
   time = 0;
   /** Lionfish removed by anyone; feeds the invasive-pressure model. */
   invasivesRemoved = 0;
@@ -109,14 +114,59 @@ export class World {
    * a run never starts with an unavoidable death.
    */
   addPlayer(def: SpeciesDef, stats: SpeciesStats, maxHp: number, zone: ZoneId): Entity {
+    const p = this.placePlayer(def, stats, maxHp, zone, 0);
+    this.player = p;
+    this.inputs.set(p.id, this.input);
+    return p;
+  }
+
+  /**
+   * Add another player (LAN multiplayer). Returns the entity and its input
+   * object, which the network layer updates as that player's inputs arrive.
+   * `slot` spreads players out so friends don't spawn on top of each other.
+   */
+  addRemotePlayer(def: SpeciesDef, zone: ZoneId, slot: number): { entity: Entity; input: PlayerInput } {
+    const p = this.placePlayer(def, def.stats, BASE_MAX_HP, zone, slot);
+    const input: PlayerInput = { x: 0, y: 0, burst: false };
+    this.inputs.set(p.id, input);
+    return { entity: p, input };
+  }
+
+  /** The input steering a player entity (idle if none is registered). */
+  inputFor(e: Entity): PlayerInput {
+    return this.inputs.get(e.id) ?? IDLE_INPUT;
+  }
+
+  /** Every living player entity, local and remote. */
+  livePlayers(): Entity[] {
+    const out: Entity[] = [];
+    for (const e of this.entities) if (e.isPlayer && e.alive) out.push(e);
+    return out;
+  }
+
+  /** Take an entity out of the world entirely (e.g. a player who left or respawned). */
+  removeEntity(e: Entity): void {
+    e.alive = false;
+    this.inputs.delete(e.id);
+    this.byId.delete(e.id);
+    const i = this.entities.indexOf(e);
+    if (i >= 0) this.entities.splice(i, 1);
+    if (this.player === e) this.player = null;
+    this.rebuildHash();
+  }
+
+  private placePlayer(def: SpeciesDef, stats: SpeciesStats, maxHp: number, zone: ZoneId, slot: number): Entity {
     const z = this.terrain.zoneDef(zone);
-    const x = Math.round((z.x[0] + z.x[1]) / 2);
+    const mid = (z.x[0] + z.x[1]) / 2;
+    // Slots fan out from the zone centre: 0, +90, -90, +180, -180, ...
+    const offset = slot === 0 ? 0 : Math.ceil(slot / 2) * 90 * (slot % 2 === 1 ? 1 : -1);
+    const x = Math.round(Math.min(z.x[1] - 40, Math.max(z.x[0] + 40, mid + offset)));
     const y = this.spawner.pickY(def, zone, x) ?? Math.min(60, this.terrain.floorAt(x) - def.height);
     const p = this.spawn(def, x, y, zone, { isPlayer: true, stats, maxHp });
     if (!p) throw new Error('could not spawn player');
-    this.player = p;
+    // Clear AI predators right next to the new fish (never other players).
     for (const o of this.entities) {
-      if (o === p || !o.alive) continue;
+      if (o === p || !o.alive || o.isPlayer) continue;
       const dx = o.x - x;
       const dy = o.y - y;
       if (dx * dx + dy * dy < 160 * 160 && o.def.diet.includes('fish') && o.def.length > def.length) {

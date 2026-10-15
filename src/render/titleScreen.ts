@@ -95,7 +95,7 @@ export class TitleScene {
 
   constructor(private readonly cast: readonly SpeciesDef[]) {}
 
-  draw(ctx: CanvasRenderingContext2D, time: number, dt: number, showPrompt: boolean): void {
+  draw(ctx: CanvasRenderingContext2D, time: number, dt: number, showPrompt: boolean, touch = false): void {
     this.drawSwimmer(ctx, time, dt);
     const period = 5;
     const phase = (time % period) / period;
@@ -105,9 +105,9 @@ export class TitleScene {
     drawText(ctx, 'FLORIDA: RIVER TO REEF', VIEW_W / 2, 89, P.cream, { align: 'center', shadow: P.ink });
     if (showPrompt) {
       if (Math.floor(time * 1.6) % 2 === 0) {
-        word(ctx, 'PRESS ANY KEY', VIEW_W / 2, 124, time, { scale: 2, ramp: WHITE, bob: 0, shine: null });
+        word(ctx, touch ? 'TAP TO START' : 'PRESS ANY KEY', VIEW_W / 2, 124, time, { scale: 2, ramp: WHITE, bob: 0, shine: null });
       }
-      drawText(ctx, 'OR CLICK TO START', VIEW_W / 2, 145, P.cream, { align: 'center', shadow: P.ink });
+      if (!touch) drawText(ctx, 'OR CLICK TO START', VIEW_W / 2, 145, P.cream, { align: 'center', shadow: P.ink });
     }
     drawText(ctx, 'A FAN-MADE TRIBUTE TO THE 1994 CLASSIC', VIEW_W / 2, VIEW_H - 10, P.silver, { align: 'center', shadow: P.ink });
   }

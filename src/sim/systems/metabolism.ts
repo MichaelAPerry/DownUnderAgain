@@ -38,7 +38,8 @@ export function metabolize(world: World, e: Entity, dt: number): void {
   if (e.def.kind !== 'fish' && e.def.kind !== 'mammal') return;
   const st = stressAt(world, e);
   let drain = 1;
-  if (e.isPlayer && world.input.burst && (world.input.x !== 0 || world.input.y !== 0)) drain += 1.5;
+  const inp = e.isPlayer ? world.inputFor(e) : null;
+  if (inp && inp.burst && (inp.x !== 0 || inp.y !== 0)) drain += 1.5;
   else if (!e.isPlayer && (e.state === 'flee' || e.state === 'hunt')) drain += 0.3;
   if (st.salinity > 0) drain += 1 + st.salinity * 4;
   drain += st.depth;

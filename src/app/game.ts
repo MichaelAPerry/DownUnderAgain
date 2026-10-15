@@ -15,11 +15,18 @@ import { Camera, VIEW_H, VIEW_W } from '../engine/camera';
 import { Input } from '../engine/input';
 import { GameLoop } from '../engine/loop';
 import { GameSession, MODES } from '../modes/session';
-import { drawHud } from '../render/hud';
+import { canEvolve, drawHud } from '../render/hud';
 import { WorldRenderer } from '../render/worldRenderer';
 import { TitleScene } from '../render/titleScreen';
 import { SIM_DT, World } from '../sim/world';
-import type { AppApi } from './api';
+import type { AppApi, LanApi, LanInvite, LanJoin } from './api';
+import { LanHost } from '../modes/lanHost';
+import { LanClient } from '../modes/lanClient';
+import { acceptInvite, createInvite } from '../net/signal';
+import { sanitizePlayerName } from '../net/protocol';
+import { drawLeaderboard, drawNameTags } from '../render/lanHud';
+import type { HudModel } from '../render/hud';
+import type { Entity, PlayerInput } from '../sim/types';
 import { loadSave, writeSave } from './save';
 import type { ModeId, SaveData } from './save';
 import { OVERLAY_SCREENS, ScreenMachine } from './screens';
@@ -27,6 +34,7 @@ import type { Screen } from './screens';
 import { SCREENS } from '../ui/screens';
 import { presentFeedback } from './feedback';
 import { fitCanvas } from './layout';
+import { TouchControls } from '../ui/touch/touchControls';
 
 /** Seconds the death / stage-clear banner shows before the next screen. */
 const OUTCOME_DELAY = 1.6;
@@ -58,6 +66,8 @@ export class Game implements AppApi {
   private readonly machine = new ScreenMachine();
   private readonly ctx: CanvasRenderingContext2D;
   private readonly input: Input;
+  /** On-screen joystick and buttons for phones and tablets. */
+  readonly touch: TouchControls;
   private readonly audio = new AudioEngine();
   private readonly title: TitleScene;
   /** Past the "press any key" gate. */
@@ -76,6 +86,13 @@ export class Game implements AppApi {
   private lastSpecies: SpeciesDef | null = null;
   /** How many of the session's discoveries are already saved. */
   private savedDiscoveries = 0;
+  // ---- LAN state ----
+  private lanHost: LanHost | null = null;
+  private lanClient: LanClient | null = null;
+  private readonly lanListeners = new Set<() => void>();
+  private lanSignature = '';
+  private lanCodexTimer = 0;
+  readonly lan: LanApi = this.makeLanApi();
 
   constructor(private readonly canvas: HTMLCanvasElement, private readonly ui: HTMLElement) {
     const ctx = canvas.getContext('2d', { alpha: false });
@@ -87,6 +104,7 @@ export class Game implements AppApi {
     this.audio.setMusicOn(this.save.music);
     this.title = new TitleScene(this.region.species.filter((s) => s.length >= 30 || s.id === 'manatee'));
     this.input = new Input(canvas);
+    this.touch = new TouchControls(canvas.parentElement ?? document.body, this.input);
     this.camera = new Camera(this.region.width, this.region.height);
     this.attract = new World(this.region, (Date.now() & 0x7fffffff) >>> 0);
     this.renderedWorld = this.attract;
@@ -122,6 +140,7 @@ export class Game implements AppApi {
     }
     this.machine.go(to);
     this.input.captureGameKeys = to === 'playing';
+    this.touch.setScreen(to);
     this.mount();
   }
 
@@ -177,6 +196,10 @@ export class Game implements AppApi {
   }
 
   quit(): void {
+    if (this.lanHost || this.lanClient) {
+      this.lan.finish();
+      return;
+    }
     this.endSession();
     this.showWorld(this.attract);
     this.camera.snap(900, 60);
@@ -272,6 +295,13 @@ export class Game implements AppApi {
     }
     if (scr === 'title' && !this.started && inp.anyPressed()) this.start();
 
+    if (this.lanHost || this.lanClient) {
+      this.updateLan(dt);
+      this.directMusic(dt);
+      inp.endFrame();
+      return;
+    }
+
     if (scr === 'playing' && s) {
       if (inp.wasPressed('Escape') || inp.wasPressed('KeyP')) {
         this.go('paused');
@@ -306,10 +336,18 @@ export class Game implements AppApi {
   }
 
   private writePlayerInput(s: GameSession): void {
-    const w = s.world.input;
-    const p = s.player;
+    Object.assign(s.world.input, this.readInput(s.player));
+  }
+
+  /** Current steering input from keys, the touch stick, or mouse-steer relative to `p`. */
+  private readInput(p: Entity | null): PlayerInput {
     let [x, y] = this.input.keyAxis();
-    if (this.input.mouseDown) {
+    const stick = this.input.stick;
+    if (stick.active) {
+      // Analogue: the sim scales speed by the axis length.
+      x = stick.x;
+      y = stick.y;
+    } else if (this.input.mouseDown && p) {
       const dx = this.input.mouseX - (p.x - this.camera.x);
       const dy = this.input.mouseY - (p.y - this.camera.y);
       const d = Math.sqrt(dx * dx + dy * dy);
@@ -318,9 +356,7 @@ export class Game implements AppApi {
         y = dy / d;
       }
     }
-    w.x = x;
-    w.y = y;
-    w.burst = this.input.burst;
+    return { x, y, burst: this.input.burst };
   }
 
   private handleOutcome(s: GameSession, dt: number): void {
@@ -338,6 +374,7 @@ export class Game implements AppApi {
   }
 
   private render(alpha: number, frameDt: number): void {
+    if ((this.lanHost || this.lanClient) && this.renderLan(alpha, frameDt)) return;
     const ctx = this.ctx;
     const scr = this.machine.current;
     const s = this.session;
@@ -363,14 +400,268 @@ export class Game implements AppApi {
       markPlayer: !!s && s.stageTime < 4,
     });
     if (live && s && scr !== 'briefing') {
-      drawHud(ctx, s, this.camera, this.time);
+      drawHud(ctx, s, this.camera, this.time, { touch: this.touch.active });
       presentFeedback(s.feedback, this.renderer, (n) => this.sfx(n));
     }
-    if (scr === 'title') this.title.draw(ctx, this.time, frameDt, !this.started);
+    if (s && scr === 'playing') {
+      const evolve = s.mode.usesEvolution && s.outcome === 'playing';
+      this.touch.frame({ evolve, canEvolve: evolve && canEvolve(s) });
+    }
+    if (scr === 'title') {
+      this.title.draw(ctx, this.time, frameDt, !this.started, document.documentElement.classList.contains('touch-ui'));
+    }
     else if (!live || scr === 'briefing') {
       ctx.fillStyle = 'rgba(20,20,32,0.25)';
       ctx.fillRect(0, 0, VIEW_W, VIEW_H);
     }
+  }
+
+  // ---- LAN ---------------------------------------------------------------
+
+  private makeLanApi(): LanApi {
+    // Arrow functions keep `this` bound to the Game.
+    const api: LanApi = {
+      get role() {
+        return self.lanHost ? 'host' : self.lanClient ? 'guest' : 'none';
+      },
+      get host() {
+        return self.lanHost;
+      },
+      get client() {
+        return self.lanClient;
+      },
+      get playerName() {
+        return self.save.name;
+      },
+      setPlayerName: (name: string) => {
+        self.save.name = sanitizePlayerName(name);
+        writeSave(self.save);
+      },
+      hostReef: (fish: SpeciesDef) => {
+        self.leaveLan();
+        self.endSession();
+        const seed = (Math.random() * 0x7fffffff) >>> 0;
+        self.lanHost = new LanHost(self.region, seed, self.save.name, fish);
+        self.showWorld(self.lanHost.world);
+        self.go('lanHost');
+        self.notifyLan(true);
+      },
+      createInvite: async (): Promise<LanInvite> => {
+        const host = self.lanHost;
+        if (!host) throw new Error('Not hosting a reef.');
+        if (host.isFull) throw new Error('The reef is full (6 players).');
+        const inv = await createInvite();
+        return {
+          code: inv.code,
+          complete: async (reply: string) => {
+            await inv.connected(reply);
+            if (self.lanHost !== host) {
+              inv.link.pc.close();
+              throw new Error('The reef has closed.');
+            }
+            host.addGuest(inv.link);
+            self.notifyLan(true);
+          },
+          cancel: () => inv.link.pc.close(),
+        };
+      },
+      join: async (inviteCode: string, fish: SpeciesDef): Promise<LanJoin> => {
+        self.leaveLan();
+        self.endSession();
+        const j = await acceptInvite(inviteCode);
+        let cancelled = false;
+        const connected = j.link.then((link) => {
+          if (cancelled) {
+            link.pc.close();
+            throw new Error('Cancelled.');
+          }
+          self.lanClient = new LanClient(self.region, link, self.save.name, fish);
+          self.notifyLan(true);
+        });
+        // Callers may ignore `connected`; never leave it as an unhandled rejection.
+        connected.catch(() => undefined);
+        return {
+          reply: j.code,
+          connected,
+          cancel: () => {
+            cancelled = true;
+            j.close();
+          },
+        };
+      },
+      start: () => {
+        const host = self.lanHost;
+        if (!host) return;
+        host.start();
+        const me = host.local.entity;
+        if (me) self.camera.snap(me.x, me.y);
+        self.go('playing');
+        self.notifyLan(true);
+      },
+      respawn: (fish: SpeciesDef) => {
+        if (self.lanHost) {
+          self.lanHost.respawnLocal(fish);
+          const me = self.lanHost.local.entity;
+          if (me) self.camera.snap(me.x, me.y);
+          self.go('playing');
+        } else if (self.lanClient) {
+          self.lanClient.respawn(fish);
+        }
+        self.notifyLan(true);
+      },
+      finish: () => {
+        if (self.lanHost) self.lanHost.end();
+        else if (self.lanClient) self.lanClient.leave();
+        else return;
+        self.go('lanResults');
+        self.notifyLan(true);
+      },
+      exit: () => {
+        self.leaveLan();
+        self.showWorld(self.attract);
+        self.camera.snap(900, 60);
+        self.go('title');
+      },
+      onChange: (fn: () => void) => {
+        self.lanListeners.add(fn);
+        return () => self.lanListeners.delete(fn);
+      },
+    };
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const self = this;
+    return api;
+  }
+
+  /** Close any LAN game (host or guest) without navigating. */
+  private leaveLan(): void {
+    if (this.lanHost) {
+      this.lanHost.dispose();
+      this.lanHost = null;
+    }
+    if (this.lanClient) {
+      if (this.lanClient.state !== 'ended' && this.lanClient.state !== 'lost') this.lanClient.leave();
+      this.lanClient = null;
+    }
+    this.lanSignature = '';
+  }
+
+  /** Tell LAN screens something changed (roster, connection, state). */
+  private notifyLan(force = false): void {
+    const h = this.lanHost;
+    const c = this.lanClient;
+    const sig = JSON.stringify([
+      h ? [h.started, h.ended, h.localDeath, h.players.map((p) => [p.slot, p.name, p.ready, p.score, p.fish.id, !!p.entity])] : null,
+      c ? [c.state, c.roster, c.deathCause, c.endReason] : null,
+    ]);
+    if (!force && sig === this.lanSignature) return;
+    this.lanSignature = sig;
+    for (const fn of [...this.lanListeners]) fn();
+  }
+
+  private lanWon(): boolean {
+    const roster = this.lanHost?.roster() ?? this.lanClient?.roster ?? [];
+    const mySlot = this.lanHost ? 1 : (this.lanClient?.slot ?? 0);
+    const top = [...roster].sort((a, b) => b.score - a.score)[0];
+    return !!top && top.slot === mySlot && top.score > 0;
+  }
+
+  private updateLan(dt: number): void {
+    const scr = this.machine.current;
+    const inp = this.input;
+    const host = this.lanHost;
+    const client = this.lanClient;
+    // Escape toggles the pause menu, but the shared reef never stops.
+    if (scr === 'playing' && (inp.wasPressed('Escape') || inp.wasPressed('KeyP'))) this.go('paused');
+    else if (scr === 'paused' && (inp.wasPressed('Escape') || inp.wasPressed('KeyP'))) this.resume();
+    else if (scr === 'playing' && inp.wasPressed('KeyC')) this.setCues(!this.save.cues);
+    const steering = scr === 'playing';
+    if (host) {
+      const me = host.local.entity;
+      Object.assign(host.world.input, steering && me ? this.readInput(me) : { x: 0, y: 0, burst: false });
+      host.update(dt);
+      if (host.localDeath && !host.local.entity && scr === 'playing') this.go('lanRespawn');
+      this.lanCodex(host.world, host.local.entity, dt);
+    } else if (client) {
+      const me = client.you;
+      client.update(dt, steering && me ? this.readInput(me) : { x: 0, y: 0, burst: false });
+      if ((client.state === 'playing' || client.state === 'dead') && scr === 'lanJoin') {
+        if (client.you) this.camera.snap(client.you.x, client.you.y);
+        this.go(client.state === 'dead' ? 'lanRespawn' : 'playing');
+      } else if (client.state === 'dead' && scr === 'playing') this.go('lanRespawn');
+      else if (client.state === 'playing' && scr === 'lanRespawn' && client.you) {
+        this.camera.snap(client.you.x, client.you.y);
+        this.go('playing');
+      } else if ((client.state === 'ended' || client.state === 'lost') && scr !== 'lanResults' && scr !== 'title') {
+        this.go('lanResults');
+      }
+      if (client.world) this.lanCodex(client.world, client.you, dt, client.seen);
+    }
+    this.notifyLan();
+  }
+
+  /** Record codex discoveries from LAN play (nearby creatures, or what the host streamed us). */
+  private lanCodex(world: World, me: Entity | null, dt: number, seen?: ReadonlySet<string>): void {
+    this.lanCodexTimer -= dt;
+    if (this.lanCodexTimer > 0) return;
+    this.lanCodexTimer = 1;
+    const codex = new Set(this.save.codex);
+    const before = codex.size;
+    if (seen) for (const id of seen) codex.add(id);
+    if (me) {
+      codex.add(me.def.id);
+      for (const o of world.near(me.x, me.y, 90, [])) codex.add(o.def.id);
+    }
+    if (codex.size > before) {
+      this.save.codex = [...codex];
+      writeSave(this.save);
+    }
+  }
+
+  /** Render a LAN game. Returns false when the regular renderer should run instead. */
+  private renderLan(alpha: number, frameDt: number): boolean {
+    const scr = this.machine.current;
+    const host = this.lanHost;
+    const client = this.lanClient;
+    const world = host?.world ?? client?.world ?? null;
+    const inGame = scr === 'playing' || scr === 'paused' || scr === 'lanRespawn' || scr === 'lanResults';
+    if (!world || !inGame) return false;
+    const ctx = this.ctx;
+    const me = host ? host.local.entity : (client?.you ?? null);
+    this.showWorld(world);
+    if (me && me.alive) this.camera.follow(me.x, me.y, me.vx, me.vy, frameDt);
+    const a = client ? client.alpha : alpha;
+    this.renderer.draw(ctx, this.camera, a, this.time, frameDt, {
+      cues: scr === 'playing' && this.save.cues && !!me,
+      markPlayer: false,
+    });
+    const roster = host ? host.roster() : (client?.roster ?? []);
+    const slotOf = (e: Entity) => (host ? host.slotOf(e) : (client?.slotOf(e) ?? 0));
+    drawNameTags(ctx, world.entities, me, roster, slotOf, this.camera, a);
+    const mySlot = host ? 1 : (client?.slot ?? 0);
+    if (me && me.alive && scr !== 'lanResults') {
+      const model: HudModel = {
+        player: me,
+        world,
+        score: roster.find((r) => r.slot === mySlot)?.score ?? 0,
+        toasts: host ? host.toasts : (client?.toasts ?? []),
+        outcome: 'playing',
+        cause: null,
+        mode: { id: 'lan', usesEvolution: false, staged: false },
+        biomass: 0,
+        upgrades: [],
+        levels: {},
+        lives: 0,
+        stage: 0,
+        stages: 1,
+        stageProgress: 0,
+        stageTime: 99,
+      };
+      drawHud(ctx, model, this.camera, this.time, { touch: this.touch.active });
+    }
+    if (scr !== 'lanResults') drawLeaderboard(ctx, roster, mySlot);
+    presentFeedback(host ? host.feedback : (client?.feedback ?? []), this.renderer, (n) => this.sfx(n));
+    if (scr === 'playing') this.touch.frame({ evolve: false, canEvolve: false });
+    return true;
   }
 
   // ---- audio -------------------------------------------------------------
@@ -380,20 +671,18 @@ export class Game implements AppApi {
     const scr = this.machine.current;
     const s = this.session;
     let want: SongId | null = 'title';
-    if (s && (scr === 'playing' || scr === 'paused' || scr === 'shop' || scr === 'briefing')) {
+    const lanWorld = this.lanHost?.world ?? this.lanClient?.world ?? null;
+    const lanMe = this.lanHost?.local.entity ?? this.lanClient?.you ?? null;
+    const swimming = scr === 'playing' || scr === 'paused' || scr === 'shop' || scr === 'briefing' || scr === 'lanRespawn';
+    if (lanWorld && swimming && lanMe) {
+      want = this.followZoneSong(ZONE_SONG[lanWorld.terrain.zoneAt(lanMe.x, lanMe.y)], dt, false);
+    } else if (lanWorld && swimming) {
+      want = this.zoneSong ?? 'title';
+    } else if (scr === 'lanResults') {
+      want = this.lanWon() ? 'victory' : 'gameOver';
+    } else if (s && (scr === 'playing' || scr === 'paused' || scr === 'shop' || scr === 'briefing')) {
       const p = s.player;
-      const zoneSong = ZONE_SONG[s.world.terrain.zoneAt(p.x, p.y)];
-      if (this.zoneSong === null || scr === 'briefing') {
-        this.zoneSong = zoneSong;
-        this.zoneSongTimer = 0;
-      } else if (zoneSong !== this.zoneSong) {
-        this.zoneSongTimer += dt;
-        if (this.zoneSongTimer >= ZONE_MUSIC_DELAY) {
-          this.zoneSong = zoneSong;
-          this.zoneSongTimer = 0;
-        }
-      } else this.zoneSongTimer = 0;
-      want = this.zoneSong;
+      want = this.followZoneSong(ZONE_SONG[s.world.terrain.zoneAt(p.x, p.y)], dt, scr === 'briefing');
     } else if (s && scr === 'stageEnd') {
       want = s.outcome === 'stageClear' ? 'stageClear' : 'gameOver';
     } else if (s && scr === 'results') {
@@ -408,6 +697,21 @@ export class Game implements AppApi {
       if (want) this.audio.playSong(SONGS[want], { restart: true, fade: 0.8 });
       else this.audio.stopSong();
     }
+  }
+
+  /** Follow the zone's song, switching only after the new zone has held for a moment. */
+  private followZoneSong(zoneSong: SongId, dt: number, immediate: boolean): SongId {
+    if (this.zoneSong === null || immediate) {
+      this.zoneSong = zoneSong;
+      this.zoneSongTimer = 0;
+    } else if (zoneSong !== this.zoneSong) {
+      this.zoneSongTimer += dt;
+      if (this.zoneSongTimer >= ZONE_MUSIC_DELAY) {
+        this.zoneSong = zoneSong;
+        this.zoneSongTimer = 0;
+      }
+    } else this.zoneSongTimer = 0;
+    return this.zoneSong;
   }
 
   /**

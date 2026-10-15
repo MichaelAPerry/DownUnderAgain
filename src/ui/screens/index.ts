@@ -2,6 +2,11 @@ import type { Screen } from '../../app/screens';
 import { briefingScreen } from './briefing';
 import { codexScreen } from './codex';
 import { helpScreen } from './help';
+import { lanHostScreen } from './lanHost';
+import { lanJoinScreen } from './lanJoin';
+import { lanMenuScreen } from './lanMenu';
+import { lanRespawnScreen } from './lanRespawn';
+import { lanResultsScreen } from './lanResults';
 import { modeSelectScreen } from './modeSelect';
 import { pausedScreen } from './paused';
 import { resultsScreen } from './results';
@@ -25,4 +30,9 @@ export const SCREENS: Partial<Record<Screen, ScreenView>> = {
   results: resultsScreen,
   codex: codexScreen,
   help: helpScreen,
+  lanMenu: lanMenuScreen,
+  lanHost: lanHostScreen,
+  lanJoin: lanJoinScreen,
+  lanRespawn: lanRespawnScreen,
+  lanResults: lanResultsScreen,
 };

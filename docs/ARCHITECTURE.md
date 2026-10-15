@@ -142,6 +142,40 @@ keeps every zone at 60 fps.
 Art tools: `npm run sprites` renders a contact sheet of every creature;
 `npm run screenshots` captures each zone in a real browser.
 
+## LAN multiplayer
+
+Serverless and host-authoritative. The host's browser runs the real `World`;
+guests send inputs and receive snapshots.
+
+- **Pairing** (`net/signal.ts`): WebRTC with no STUN/TURN servers, so traffic
+  stays on the LAN. The host's SDP offer becomes an *invite code*, the
+  guest's answer a *reply code*. A data-channel SDP is mostly random keys, so
+  instead of compressing it we pack only what a LAN connection needs (ICE
+  credentials, DTLS fingerprint and role, UDP host candidates incl. mDNS
+  names, SCTP settings) into under 100 bytes (~120-character codes, small QR codes) and
+  rebuild a minimal SDP on the other side; deflated SDP is the fallback.
+- **Channels**: `ctl` (reliable, JSON control messages) and `snap`
+  (unreliable/unordered binary). Guests send 4-byte inputs at 30 Hz; the host
+  sends each guest a 20 Hz snapshot of only the creatures near them
+  (13 bytes each, positions to 1/8 px). Everything received is validated
+  (`net/protocol.ts`).
+- **Host** (`modes/lanHost.ts`): joins, names, scoring (eating a player ×3),
+  kill feed, deaths and respawns, per-guest effects (sounds/particles).
+- **Guest** (`modes/lanClient.ts`): rebuilds terrain from the host's seed,
+  keeps interpolated proxy entities, streams input. The shared reef never
+  pauses: pause and respawn menus overlay a live game.
+- The sim gained per-player inputs (`World.addRemotePlayer`, `inputFor`) and
+  spawns that avoid every player.
+
+## Touch and single file
+
+- `ui/touch/`: floating analogue joystick + BURST/PAUSE/EVOLVE buttons that
+  drive the same `Input` the keyboard does; shown only on touch devices.
+  Phones fill the screen with fractional nearest-neighbour scaling.
+- `vite build --mode single` inlines JS, CSS and fonts into one HTML file,
+  allowing the inline script by SHA-256 hash in the CSP; an e2e test plays it
+  from `file://` with zero network requests.
+
 ## Security
 
 - No `innerHTML` / `eval`; all text is set with `textContent` via `ui/dom.ts`

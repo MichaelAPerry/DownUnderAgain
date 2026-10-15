@@ -24,7 +24,10 @@ export const briefingScreen: ScreenView = (app) => {
   const zoneNames = sp.habitats.map((hb) => app.region.zones.find((z) => z.id === hb.zone)?.name ?? hb.zone);
   let goal: string;
   if (mode.staged) goal = `GOAL: EAT ${STAGE_GROWTH}% ENERGY OR SURVIVE ${STAGE_TIME}S`;
-  else if (mode.usesEvolution) goal = 'GOAL: EAT TO EARN BIOMASS. PRESS TAB TO EVOLVE';
+  else if (mode.usesEvolution) {
+    const touch = document.documentElement.classList.contains('touch-ui');
+    goal = `GOAL: EAT TO EARN BIOMASS. ${touch ? 'TAP THE EVOLVE BUTTON' : 'PRESS TAB'} TO MUTATE`;
+  }
   else goal = 'GOAL: SURVIVE AS LONG AS YOU CAN';
 
   const frame = spriteFor(sp).frames[0];
