@@ -7,74 +7,84 @@ import type { PixelSprite } from './pixelSprite';
 const P = PALETTE;
 
 const DEFS: Record<FoodSpriteId, { frames: string[][]; legend: Record<string, string> }> = {
+  // Filamentous algae tuft: three fronds with lit tips, swaying.
   algae: {
-    legend: { g: P.seafoam, d: P.forest, l: P.lime },
+    legend: { l: P.lime, g: P.seafoam, d: P.forest, m: P.moss },
     frames: [
-      ['.l..l.', '.g.lg.', 'gd.gd.', '.gdg.g', '.dgd.d', 'ddgddd'],
-      ['l..l..', 'g.lg..', '.gdgd.', 'g.gdg.', '.dgd.d', 'ddgddd'],
+      ['l...l.', 'g.l.g.', 'gdg.gl', '.gdgd.', 'mgdgdm', '.mdmm.'],
+      ['.l...l', '.g.l.g', '.gdg.g', '.gdgd.', 'mgdgdm', '.mdmm.'],
     ],
   },
+  // Turtle-grass blades: 2px wide, lit left edge, an old olive tip.
   seagrass: {
-    legend: { g: P.seafoam, d: P.forest, l: P.lime },
+    legend: { l: P.lime, g: P.seafoam, d: P.forest, o: P.olive, m: P.moss },
     frames: [
-      ['.l....', '.g..l.', '.g..g.', 'lg..g.', 'g.g.g.', 'g.g.gl', 'g.d.gg', 'd.d.dg', 'dgd.dg', 'dddddd'],
-      ['..l...', '..g..l', '.g...g', 'l.g.g.', 'g.g.g.', 'g.g.g.', 'g.d.gl', 'd.d.dg', 'dgd.dg', 'dddddd'],
+      ['lg....', 'gd..o.', 'gd..gl', 'gd..gd', 'gdl.gd', 'gdgdgd', 'gdgdgd', 'gdgdgd', 'dmgddm', 'mmmmmm'],
+      ['.lg...', '.gd..o', '.gd..g', 'gd..gd', 'gdl.gd', 'gdgdgd', 'gdgdgd', 'gdgdgd', 'dmgddm', 'mmmmmm'],
     ],
   },
+  // Polyp colony: tentacle tips extend and retract.
   coral: {
-    legend: { y: P.yellow, o: P.orange, t: P.tan, w: P.cream },
+    legend: { w: P.cream, y: P.yellow, o: P.orange, t: P.tan, r: P.rust, b: P.brown },
     frames: [
-      ['.w..w..w', 'yoy.oy.y', 'oyoyoyoy', 'yotyotyo', 'ttotttot', 'tttttttt'],
-      ['w..w..w.', 'yoy.oy.y', 'oyoyoyoy', 'yotyotyo', 'ttotttot', 'tttttttt'],
+      ['.w.wy.w.', 'yy.yo.yw', 'oy.oy.yy', 'oytoyroy', 'rotrotro', 'bbrbbrbb'],
+      ['w..yw..w', 'yy.yo.yy', 'oy.oy.yo', 'oytoyroy', 'rotrotro', 'bbrbbrbb'],
     ],
   },
+  // Copepod: flicking antennae, glassy body.
   plankton: {
-    legend: { w: P.white, c: P.cyan },
+    legend: { w: P.white, c: P.cyan, t: P.teal },
     frames: [
-      ['w..c', '.c..', '..w.', 'c..w'],
-      ['.w..', 'c..w', '.c..', '..c.'],
+      ['c..c', '.wc.', '.cw.', '..t.'],
+      ['.c.c', 'cwc.', '.cw.', '..t.'],
     ],
   },
+  // Mosquito larva: dark head, segmented body, breathing siphon up to the surface; wriggles.
   larva: {
-    legend: { b: P.brown, t: P.tan },
+    legend: { k: P.ink, b: P.brown, t: P.tan },
     frames: [
-      ['b.t', '.bb'],
-      ['bb.', '.bt'],
+      ['..t', 'kbb'],
+      ['.t.', 'kb.'],
     ],
   },
+  // Shrimp: banded translucent body, antenna, walking legs.
   shrimp: {
-    legend: { p: P.pink, w: P.cream, r: P.red },
+    legend: { p: P.pink, w: P.cream, r: P.red, k: P.ink },
     frames: [
-      ['.r.pr', 'wpwpw', 'w..r.'],
-      ['r..pr', 'wpwpw', '.w.r.'],
+      ['..ppw', 'rpwpk', '.r.ww'],
+      ['..pw.', 'rpwpk', 'r..w.'],
     ],
   },
+  // Blue crab: orange-tipped claws, stalked eyes, scuttling legs.
   crab: {
-    legend: { b: P.blue, s: P.sky, o: P.orange, k: P.ink },
+    legend: { o: P.orange, k: P.ink, b: P.blue, s: P.sky, n: P.navy },
     frames: [
-      ['o.k.k.o', 'obsbsbo', '.bbbbb.', 'b.b.b.b'],
-      ['o.k.k.o', 'obsbsbo', '.bbbbb.', '.b.b.b.'],
+      ['o.k.k.o', 'bssbssb', '.bbbbn.', 'b.n.n.b'],
+      ['.ok.ko.', 'bssbssb', '.bbbbn.', '.n.n.n.'],
     ],
   },
+  // Bristle worm (polychaete) wriggling, orange head.
   worm: {
-    legend: { r: P.red, p: P.pink, o: P.orange },
+    legend: { r: P.red, p: P.pink, o: P.orange, c: P.crimson },
     frames: [
-      ['.rprp', 'oprp.'],
-      ['oprp.', '.rpro'],
+      ['.pr..', 'c..po'],
+      ['c..po', '.pr..'],
     ],
   },
+  // Clam: ribbed shell gaping to show the pink mantle.
   clam: {
-    legend: { g: P.grey, s: P.silver, d: P.darkgrey, w: P.cream },
+    legend: { s: P.silver, g: P.grey, d: P.darkgrey, w: P.white, p: P.pink },
     frames: [
-      ['.sss.', 'sgsgs', 'gdgdg', 'dwwwd'],
-      ['.sss.', 'sgsgs', 'gdgdg', 'd...d'],
+      ['.sws.', 'sgsgd', 'dpwpd', '.dgd.'],
+      ['.sws.', 'sgsgd', 'gdgdd', '.dgd.'],
     ],
   },
+  // Krill: eye, red body, paddling legs.
   krill: {
-    legend: { r: P.red, o: P.orange, p: P.pink },
+    legend: { r: P.red, o: P.orange, p: P.pink, k: P.ink },
     frames: [
-      ['.ror', 'ppo.'],
-      ['ror.', '.opp'],
+      ['rpok', '.r.p'],
+      ['rpok', 'r.p.'],
     ],
   },
 };
