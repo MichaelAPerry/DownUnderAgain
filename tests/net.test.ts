@@ -84,10 +84,11 @@ describe('pairing codes', () => {
   it('round-trips an SDP through a compact code', async () => {
     const code = await encodeCode(CODE_PREFIX_INVITE, SDP);
     expect(code.startsWith(`${CODE_PREFIX_INVITE}.`)).toBe(true);
-    expect(code.length).toBeLessThan(SDP.length);
-    expect(await decodeCode(CODE_PREFIX_INVITE, code)).toBe(SDP);
+    expect(code.length).toBeLessThan(SDP.length / 2);
+    const back = await decodeCode(CODE_PREFIX_INVITE, code);
+    for (const key of ['a=ice-ufrag:abcd', 'a=ice-pwd:aaaaaaaaaaaaaaaaaaaaaaaa', 'a=setup:actpass', 'a=sctp-port:5000']) expect(back).toContain(key);
     // Whitespace from copy/paste or line wrapping is ignored.
-    expect(await decodeCode(CODE_PREFIX_INVITE, ` ${code.slice(0, 20)}\n${code.slice(20)} `)).toBe(SDP);
+    expect(await decodeCode(CODE_PREFIX_INVITE, ` ${code.slice(0, 20)}\n${code.slice(20)} `)).toBe(back);
   });
 
   it('explains wrong or broken codes', async () => {
@@ -120,5 +121,60 @@ describe('QR codes', () => {
       }
     }));
     expect(jsQR(px, size, size)?.data).toBe(code);
+  });
+});
+
+describe('compact pairing codes', () => {
+  // Captured from Chromium (data channels only, non-trickle).
+  const CHROME_MDNS = [
+    'v=0', 'o=- 2837763547605187372 2 IN IP4 127.0.0.1', 's=-', 't=0 0', 'a=group:BUNDLE 0', 'a=extmap-allow-mixed',
+    'a=msid-semantic: WMS', 'm=application 9 UDP/DTLS/SCTP webrtc-datachannel', 'c=IN IP4 0.0.0.0',
+    'a=candidate:2016423627 1 udp 2113937151 055a534e-01d5-4068-b1f1-4354918acede.local 58289 typ host generation 0 network-cost 999',
+    'a=ice-ufrag:evdw', 'a=ice-pwd:oj8KUtKyKDVifNvOrRgyKl1B', 'a=ice-options:trickle',
+    'a=fingerprint:sha-256 C8:27:63:F4:35:1C:E5:06:65:C4:72:DD:5F:F6:D2:86:B5:F3:05:D1:D4:A1:2A:E4:57:08:28:B2:6F:EA:94:13',
+    'a=setup:actpass', 'a=mid:0', 'a=sctp-port:5000', 'a=max-message-size:262144', '',
+  ].join('\r\n');
+  const ANSWER_V4_V6 = CHROME_MDNS
+    .replace('a=setup:actpass', 'a=setup:active')
+    .replace(/a=candidate:.*\r\n/, 'a=candidate:1 1 udp 2113937151 192.168.1.23 48036 typ host generation 0\r\n'
+      + 'a=candidate:2 1 udp 2113939711 fe80::1c2b:3aff:fe00:12 48037 typ host generation 0\r\n'
+      + 'a=candidate:3 1 tcp 1518280447 192.168.1.23 9 typ host tcptype active generation 0\r\n');
+
+  const essentials = (sdp: string) => sdp.split('\r\n').filter((l) =>
+    /^a=(ice-ufrag|ice-pwd|fingerprint|setup|sctp-port|max-message-size):/.test(l)).sort();
+  const candidates = (sdp: string) => sdp.split('\r\n').filter((l) => l.startsWith('a=candidate:'))
+    .map((l) => l.split(' ').slice(2, 6).join(' ')); // transport priority address port
+
+  it('packs a real offer into a short code and rebuilds its essentials', async () => {
+    const code = await encodeCode(CODE_PREFIX_INVITE, CHROME_MDNS);
+    expect(code).toMatch(/^DUA1I\.~[A-Za-z0-9_-]+$/);
+    expect(code.length).toBeLessThan(140);
+    const back = await decodeCode(CODE_PREFIX_INVITE, code);
+    expect(essentials(back)).toEqual(essentials(CHROME_MDNS));
+    expect(candidates(back)).toEqual(candidates(CHROME_MDNS));
+    expect(back).toContain('m=application 9 UDP/DTLS/SCTP webrtc-datachannel');
+  });
+
+  it('keeps IPv4 and IPv6 UDP host candidates, drops TCP ones', async () => {
+    const back = await decodeCode(CODE_PREFIX_REPLY, await encodeCode(CODE_PREFIX_REPLY, ANSWER_V4_V6));
+    expect(candidates(back)).toEqual(['udp 2113937151 192.168.1.23 48036', 'udp 2113939711 fe80:0:0:0:1c2b:3aff:fe00:12 48037']);
+    expect(back).toContain('a=setup:active');
+  });
+
+  it('falls back to deflated SDP when there is nothing to pack', async () => {
+    const noCands = CHROME_MDNS.replace(/a=candidate:.*\r\n/, '');
+    const code = await encodeCode(CODE_PREFIX_INVITE, noCands);
+    expect(code.startsWith('DUA1I.~')).toBe(false);
+    expect(await decodeCode(CODE_PREFIX_INVITE, code)).toBe(noCands);
+  });
+
+  it('rejects truncated or corrupted compact codes without throwing anything else', async () => {
+    const code = await encodeCode(CODE_PREFIX_INVITE, CHROME_MDNS);
+    await expect(decodeCode(CODE_PREFIX_INVITE, code.slice(0, code.length - 12))).rejects.toThrow(/damaged/);
+    for (let i = 8; i < code.length; i += 7) {
+      const bad = code.slice(0, i) + (code[i] === 'A' ? 'B' : 'A') + code.slice(i + 1);
+      // Either decodes to some well-formed SDP or reports damage; never anything else.
+      await decodeCode(CODE_PREFIX_INVITE, bad).then((s) => expect(s.startsWith('v=0')).toBe(true), (e: Error) => expect(e.message).toMatch(/damaged|invalid/));
+    }
   });
 });

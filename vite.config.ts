@@ -71,7 +71,7 @@ export default defineConfig(({ mode }) => {
       cssCodeSplit: !single,
       outDir: single ? 'dist-single' : 'dist',
       modulePreload: single ? false : { polyfill: true },
-      ...(single ? { rollupOptions: { output: { inlineDynamicImports: true } } } : {}),
+      ...(single ? { rollupOptions: { output: { codeSplitting: false } } } : {}),
     },
     test: {
       environment: 'node',

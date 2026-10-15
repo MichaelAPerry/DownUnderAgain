@@ -25,7 +25,7 @@ export const TRANSITIONS: Readonly<Record<Screen, readonly Screen[]>> = {
   sandbox: ['speciesSelect', 'briefing'],
   briefing: ['playing', 'title'],
   playing: ['paused', 'shop', 'stageEnd', 'results', 'lanRespawn', 'lanResults'],
-  paused: ['playing', 'help', 'title', 'lanResults'],
+  paused: ['playing', 'help', 'title', 'lanResults', 'lanHost'],
   shop: ['playing'],
   stageEnd: ['briefing', 'results', 'title'],
   results: ['title', 'briefing', 'modeSelect'],
