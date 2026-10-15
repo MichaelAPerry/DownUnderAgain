@@ -101,3 +101,24 @@ describe('pairing codes', () => {
     await expect(decodeCode(CODE_PREFIX_INVITE, bomb)).rejects.toThrow();
   });
 });
+
+describe('QR codes', () => {
+  it('encode an invite code that jsQR reads back exactly', async () => {
+    const { qrMatrix } = await import('../src/net/qr');
+    const jsQR = (await import('jsqr')).default;
+    const code = await encodeCode(CODE_PREFIX_INVITE, SDP);
+    const m = qrMatrix(code);
+    const cell = 4;
+    const quiet = 4;
+    const size = (m.length + quiet * 2) * cell;
+    const px = new Uint8ClampedArray(size * size * 4).fill(255);
+    m.forEach((row, r) => row.forEach((dark, c) => {
+      if (!dark) return;
+      for (let y = 0; y < cell; y++) for (let x = 0; x < cell; x++) {
+        const i = (((r + quiet) * cell + y) * size + (c + quiet) * cell + x) * 4;
+        px[i] = px[i + 1] = px[i + 2] = 0;
+      }
+    }));
+    expect(jsQR(px, size, size)?.data).toBe(code);
+  });
+});

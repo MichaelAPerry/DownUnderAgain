@@ -11,25 +11,35 @@ export type Screen =
   | 'stageEnd'
   | 'results'
   | 'codex'
-  | 'help';
+  | 'help'
+  | 'lanMenu'
+  | 'lanHost'
+  | 'lanJoin'
+  | 'lanRespawn'
+  | 'lanResults';
 
 export const TRANSITIONS: Readonly<Record<Screen, readonly Screen[]>> = {
   title: ['modeSelect', 'codex', 'help'],
-  modeSelect: ['title', 'speciesSelect', 'briefing'],
+  modeSelect: ['title', 'speciesSelect', 'briefing', 'lanMenu'],
   speciesSelect: ['modeSelect', 'sandbox', 'briefing'],
   sandbox: ['speciesSelect', 'briefing'],
   briefing: ['playing', 'title'],
-  playing: ['paused', 'shop', 'stageEnd', 'results'],
-  paused: ['playing', 'help', 'title'],
+  playing: ['paused', 'shop', 'stageEnd', 'results', 'lanRespawn', 'lanResults'],
+  paused: ['playing', 'help', 'title', 'lanResults'],
   shop: ['playing'],
   stageEnd: ['briefing', 'results', 'title'],
   results: ['title', 'briefing', 'modeSelect'],
   codex: ['title'],
   help: ['title', 'paused'],
+  lanMenu: ['modeSelect', 'lanHost', 'lanJoin', 'title'],
+  lanHost: ['lanMenu', 'playing', 'lanResults', 'title'],
+  lanJoin: ['lanMenu', 'playing', 'lanRespawn', 'lanResults', 'title'],
+  lanRespawn: ['playing', 'lanResults', 'paused'],
+  lanResults: ['title'],
 };
 
 /** Screens drawn over a live (frozen) game rather than the attract-mode reef. */
-export const OVERLAY_SCREENS: ReadonlySet<Screen> = new Set(['paused', 'shop', 'stageEnd', 'results']);
+export const OVERLAY_SCREENS: ReadonlySet<Screen> = new Set(['paused', 'shop', 'stageEnd', 'results', 'lanRespawn', 'lanResults']);
 
 export class ScreenMachine {
   private cur: Screen = 'title';

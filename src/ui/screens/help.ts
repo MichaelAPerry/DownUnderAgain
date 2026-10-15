@@ -26,6 +26,13 @@ export const helpScreen: ScreenView = (app) => {
       'TAB: EVOLVE (Evolution mode)',
       'M: MUTE',
     ])),
+    section('TOUCH CONTROLS', list([
+      'DRAG ON THE LEFT OF THE SCREEN: SWIM (the further you drag, the faster)',
+      'HOLD BURST: SPEED BURST (uses extra energy)',
+      'II: PAUSE',
+      'EVOLVE: UPGRADE (Evolution mode; it flashes when you can afford one)',
+      'Turn your phone sideways for a bigger reef',
+    ])),
     section(
       'SURVIVAL',
       'Energy drops over time: eat to refill it. Swim into food mouth-first to eat.',

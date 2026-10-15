@@ -4,6 +4,7 @@
  */
 import { isValidSpec } from '../data/sandbox';
 import type { CustomFishSpec } from '../data/sandbox';
+import { sanitizePlayerName } from '../net/protocol';
 
 export const MODE_IDS = ['freeSwim', 'evolution', 'tournament', 'challenge'] as const;
 export type ModeId = (typeof MODE_IDS)[number];
@@ -17,13 +18,15 @@ export interface SaveData {
   codex: string[];
   best: Partial<Record<ModeId, number>>;
   custom: CustomFishSpec | null;
+  /** Name shown to other players in LAN games. */
+  name: string;
 }
 
 const KEY = 'downUnderAgain.save.v1';
 const MAX_BYTES = 64 * 1024;
 
 export function defaultSave(): SaveData {
-  return { v: 1, muted: false, music: true, cues: true, codex: [], best: {}, custom: null };
+  return { v: 1, muted: false, music: true, cues: true, codex: [], best: {}, custom: null, name: 'PLAYER' };
 }
 
 /** Parse and validate raw JSON text; anything suspicious is dropped. */
@@ -53,6 +56,7 @@ export function parseSave(raw: string | null, knownIds: ReadonlySet<string>): Sa
     }
   }
   if (isValidSpec(o.custom)) out.custom = o.custom;
+  if (typeof o.name === 'string' && o.name.length <= 40) out.name = sanitizePlayerName(o.name);
   return out;
 }
 
