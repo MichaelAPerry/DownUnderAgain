@@ -329,7 +329,7 @@ function drawFish(look: FishLook, W: number, H: number, seed: number, phase: 0 |
   const bendAmp = phase ? Math.max(1, Math.round(H * 0.09)) : 0;
   const bend = (x: number) => bendAmp * Math.pow(Math.max(0, (tailW - x) / tailW), 1.4);
   const P = (x: number, y: number): Pt => [x, y - bend(x)];
-  const tailRamp = shape === 'manatee' || sharkish ? R.body : R.fin;
+  const tailRamp = shape === 'manatee' || sharkish ? R.body : grouper ? blendRamp(R.fin, R.body, 0.7) : R.fin;
   const tailKind = shape === 'manatee' || sharkish ? BODY : FIN;
   const tailSet = new Set<number>();
   const plotTail = (x: number, y: number) => {
@@ -373,10 +373,14 @@ function drawFish(look: FishLook, W: number, H: number, seed: number, phase: 0 |
       }
       case 'round': {
         const span = Math.max(ped + 0.5, half * (grouper ? 0.82 : 0.85));
+        // A fan (circular sector) hinged at the peduncle: narrow root, rounded trailing edge.
+        const A = (62 * Math.PI) / 180;
+        const r = tw;
+        const ky = span / (r * Math.sin(A));
         poly.push(P(tw, pcy - ped));
-        for (let k = 0; k <= 10; k++) {
-          const a = Math.PI / 2 + (Math.PI * k) / 10;
-          poly.push(P(tailW * (0.95 + 0.95 * Math.cos(a)), pcy - span * Math.sin(a)));
+        for (let k = 0; k <= 12; k++) {
+          const t = -A + (2 * A * k) / 12;
+          poly.push(P(tw - r * Math.cos(t), pcy + r * Math.sin(t) * ky));
         }
         poly.push(P(tw, pcy + ped));
         break;
@@ -422,10 +426,12 @@ function drawFish(look: FishLook, W: number, H: number, seed: number, phase: 0 |
       tone = ray % 2 === 0 ? LIT : BASE;
       if (x >= tailW - Math.max(1, Math.round(tailW * 0.15))) tone = grouper ? BASE : SHD;
       if (spec.tailStyle === 'lunate') tone = ray % 2 === 0 ? HI : LIT;
+      if (grouper && x < tailW - 1) tone = ray % 2 === 0 ? LIT : SHD;
       if (tiny) tone = BASE;
     }
     let ramp = tailRamp;
     if (pattern === 'spots' && tailKind === FIN && spotAt(x, y)) ramp = R.accent;
+    if (pattern === 'mottled' && tailKind === FIN && valueNoise(x, y, Math.max(3, H / 5), seed) > 0.64) ramp = blotch;
     c.put(x, y, tailKind, ramp, tone);
   }
 
@@ -463,8 +469,8 @@ function drawFish(look: FishLook, W: number, H: number, seed: number, phase: 0 |
     switch (shape) {
       case 'fusiform': {
         if (grouper) {
-          fin(0.2, 0.7, hFin(0.1), -1, (s) => Math.min(1, s * 3) * Math.min(1, (1 - s) * 8) * (0.7 + 0.3 * s), true);
-          fin(0.06, 0.24, hFin(0.13), -1, rounded, false);
+          // One long continuous dorsal: low spiny front rising to a rounded soft lobe at the rear.
+          fin(0.08, 0.72, hFin(0.11), -1, (s) => Math.min(1, (1 - s) * 7) * (0.72 + 0.28 * Math.sin(Math.PI * Math.min(1, s * 2.2))) * Math.min(1, s * 5 + 0.25), false);
           fin(0.06, 0.24, hFin(0.13), 1, rounded, false);
           fin(0.55, 0.66, hFin(0.1), 1, tri, false);
         } else if (W >= 14) {
@@ -868,17 +874,29 @@ function drawFish(look: FishLook, W: number, H: number, seed: number, phase: 0 |
     } else {
       let size = H < 5 || W < 12 ? 1 : H < 8 ? 1.5 : H < 16 ? 2 : 3;
       if (sharkish) size = Math.min(size, H >= 12 ? 2 : 1.5);
-      if (shape === 'manatee') size = 1;
+      if (shape === 'manatee') {
+        // Small but clear: set high and forward on the head, dark with one glint.
+        ex = Math.min(x1 - 3, uToX(0.9));
+        const mt = top[ex] as number;
+        ey = mt + Math.max(2, Math.floor(((bot[ex] as number) - mt) * 0.2));
+        c.fix(ex, ey, PALETTE.ink);
+        c.fix(ex + 1, ey, PALETTE.white);
+        c.fix(ex, ey + 1, PALETTE.ink);
+        c.fix(ex + 1, ey + 1, PALETTE.ink);
+        c.setTone(ex - 1, ey, SHD);
+        c.setTone(ex - 1, ey + 1, SHD);
+        c.setTone(ex, ey - 1, LIT);
+        c.setTone(ex + 1, ey - 1, LIT);
+        size = 0;
+      }
       const iris = luma(PALETTE[look.colors.body]) > 170 ? PALETTE.yellow : PALETTE.cream;
       // Keep the eye (and its glint) inside the head, clear of the snout tip.
       if (size >= 2) ex = Math.max(tailW, Math.min(ex, x1 - (size === 3 ? 3 : 2)));
       const darkBody = luma(PALETTE[look.colors.body]) < 70;
-      if (size === 1) {
+      if (size === 0) {
+        // drawn above
+      } else if (size === 1) {
         c.fix(ex, ey, darkBody ? PALETTE.silver : PALETTE.ink);
-        if (shape === 'manatee') {
-          c.setTone(ex - 1, ey, DEEP);
-          c.setTone(ex, ey - 1, SHD);
-        }
       } else if (size === 1.5) {
         c.fix(ex, ey, PALETTE.ink);
         c.fix(ex - 1, ey, sharkish ? R.body[SHD] : iris);
