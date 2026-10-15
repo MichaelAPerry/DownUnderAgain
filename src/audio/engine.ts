@@ -11,8 +11,8 @@ import type { CompiledSong, DrumHit, Instrument, Song, Wave } from './songFormat
 
 const LOOKAHEAD = 0.15; // seconds of music scheduled ahead
 const TICK_MS = 25;
-const MUSIC_LEVEL = 0.32;
-const SFX_LEVEL = 0.55;
+const MUSIC_LEVEL = 0.5;
+const SFX_LEVEL = 0.7;
 
 interface AudioSessionNav {
   audioSession?: { type: string };
