@@ -105,12 +105,12 @@ export class Spawner {
     const inset = SALINITY_BLEND / 2 + 10;
     const x0 = z.x[0] === 0 ? 20 : z.x[0] + inset;
     const x1 = z.x[1] >= w.terrain.width ? z.x[1] - 20 : z.x[1] - inset;
-    const p = w.player;
+    const players = hidden ? w.livePlayers() : [];
     for (let attempt = 0; attempt < 8; attempt++) {
       const cx = rng.range(x0, x1);
       const cy = this.pickY(def, zone, cx);
       if (cy === null) continue;
-      if (hidden && p && p.alive && Math.abs(cx - p.x) < HIDE_DX && Math.abs(cy - p.y) < HIDE_DY) continue;
+      if (players.some((p) => Math.abs(cx - p.x) < HIDE_DX && Math.abs(cy - p.y) < HIDE_DY)) continue;
       const [gmin, gmax] = def.behavior.groupSize;
       const size = rng.int(gmin, gmax);
       let made = 0;

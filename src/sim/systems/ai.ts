@@ -175,7 +175,7 @@ export function steerActor(world: World, e: Entity, dt: number): void {
     return;
   }
   if (e.isPlayer) {
-    const inp = world.input;
+    const inp = world.inputFor(e);
     const m = Math.sqrt(inp.x * inp.x + inp.y * inp.y);
     const speed = e.stats.maxSpeed * (inp.burst ? 1.15 : 0.8);
     if (m > 0.01) accelerate(e, (inp.x / m) * speed * Math.min(1, m), (inp.y / m) * speed * Math.min(1, m), dt);

@@ -27,6 +27,8 @@ jobs:
         run: npm run check
       - name: Build
         run: npx vite build
+      - name: Build single-file edition
+        run: npx vite build --mode single && cp dist-single/down-under-again.html dist/
       - name: Upload Pages artifact
         if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v3
